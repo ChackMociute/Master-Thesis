@@ -1,4 +1,6 @@
+__pycache__/
 .ipynb_checkpoints 
 *.pdf
 literature/
 random/
+grid_cells.npy
