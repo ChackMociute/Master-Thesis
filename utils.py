@@ -34,7 +34,7 @@ class ReplayBuffer:
         self.states_ = torch.zeros_like(self.states, device=device)
         self.actions = torch.zeros((maxlen, actions), device=device)
         self.rewards = torch.zeros(maxlen, device=device)
-        self.dones = torch.zeros(maxlen, dtype=bool, device=device)
+        self.dones = torch.zeros(maxlen, dtype=torch.uint8, device=device)
         self.locs = torch.zeros_like(self.actions)
     
     def store_transition(self, state, action, reward, new_state, done, loc=None):
@@ -48,5 +48,5 @@ class ReplayBuffer:
         self.counter += 1
     
     def sample(self, bs):
-        i = np.random.choice(min(self.max, self.counter), min(bs, self.counter), replace=False)
+        i = torch.ones(min(self.max, self.counter), device=device).multinomial(min(bs, self.counter, self.max))
         return self.states[i], self.actions[i], self.rewards[i], self.states_[i], self.dones[i], self.locs[i]

@@ -65,20 +65,21 @@ class GridCellWorld(Environment):
     
     def reset(self, end_point=None, end_radius=None):
         dim = self.coords.shape[-1]
+        amp = np.diff(self.bounds).item()
         self.end_point = torch.zeros(dim, device=device) if end_point is None else end_point
-        self.end_radius = np.diff(self.bounds).item() / 20 if end_radius is None else end_radius
+        self.end_radius = amp / 20 if end_radius is None else end_radius
         # self.velocity = np.zeros(dim)
-        self.state = to_tensor(np.random.uniform(*self.bounds, dim))
-        while self.done():
-            self.state = to_tensor(np.random.uniform(*self.bounds, dim))
-        # self.state = np.random.choice([-1, 1], 2)
+        self.state = torch.rand(dim, device=device) * amp + self.bounds[0]
+        while self.done(self.distance()):
+            self.state = torch.rand(dim, device=device) * amp + self.bounds[0]
         return self.get_state()
         
     # def next_state(self, acceleration):
         # self.velocity = np.clip(self.velocity + acceleration, *self.max_velocity)
     def next_state(self, action):
         self.state = torch.clip(self.state + action, *self.bounds)
-        return self.get_state(), self.reward(), self.done()
+        dist = self.distance()
+        return self.get_state(), self.reward(dist), self.done(dist)
     
     def get_state(self):
         # return np.concatenate([self.velocity, self.grid_cells[self.closest_coord_index(self.state)]])
@@ -91,12 +92,13 @@ class GridCellWorld(Environment):
         row, col = idx // self.coords.shape[0], idx % self.coords.shape[1]
         return (row, col)
     
-    def done(self):
-        return torch.sum((self.state - self.end_point)**2) <= self.end_radius**2
+    def done(self, dist):
+        return dist <= self.end_radius**2
     
-    def reward(self):
-        # dim = self.coords.shape[-1]
-        # corners = torch.tensor(torch.meshgrid(*[self.bounds] * dim), device=device).T.view(-1, dim)
-        # max_dist = torch.sum((self.end_point - corners)**2, axis=-1).max()
-        reward = -torch.sqrt(torch.sum((self.state - self.end_point)**2))
-        return to_tensor(1) if self.done() else reward
+    def reward(self, dist):
+        reward = -torch.sqrt(dist)
+        return to_tensor(1) if self.done(dist) else reward
+    
+    def distance(self):
+        dist = self.state - self.end_point
+        return torch.sum(dist * dist)
