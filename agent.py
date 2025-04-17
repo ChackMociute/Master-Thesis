@@ -44,6 +44,7 @@ class Agent:
     def __init__(self, inp_size, actions,
                  bounds=(-1, 1),
                  action_amp=1,
+                 exploration_std=0.1,
                  bs=64,
                  tau=0.005,
                  buffer_length=1000,
@@ -55,6 +56,7 @@ class Agent:
         self.bs = bs
         self.tau = tau
         self.amp = action_amp
+        self.exploration_std = exploration_std
         self.grad_norm = grad_norm
         
         self.buffer = ReplayBuffer(inp_size, actions, maxlen=buffer_length)
@@ -86,7 +88,7 @@ class Agent:
     def choose_action(self, state, evaluate=False, numpy=False):
         action = self.actor(state)[0].detach()
         if not evaluate:
-            action += torch.randn(*action.shape, device=device) * (self.amp / 3)
+            action += torch.randn(*action.shape, device=device) * self.exploration_std
             action = torch.clip(action, -self.amp, self.amp)
         return action.detach().cpu().numpy() if numpy else action
     
