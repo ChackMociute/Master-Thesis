@@ -98,7 +98,9 @@ class GridCellModule:
     def add_phase(self, grid_cells, rot_angle):
         p = np.linspace(-self.period / 2, self.period / 2, int(np.sqrt(self.n)), endpoint=False)
         phases = np.stack(np.meshgrid(p, p)).reshape(2, -1).T
-        phases = phases @ self.rot2d(rot_angle / 180 * np.pi).T
+        shear = self.shear2d(np.pi / 6).T
+        rot = self.rot2d(rot_angle / 180 * np.pi).T
+        phases = phases @ shear @ rot
         return np.asarray([shift(gc, phase) for gc, phase in zip(grid_cells, phases)])
     
     @staticmethod
@@ -106,6 +108,13 @@ class GridCellModule:
         return np.asarray([
             [np.cos(angle), -np.sin(angle)],
             [np.sin(angle), np.cos(angle)]
+        ])
+    
+    @staticmethod
+    def shear2d(angle):
+        return np.asarray([
+            [1, np.sin(angle)],
+            [0, np.cos(angle)]
         ])
 
 

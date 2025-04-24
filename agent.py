@@ -112,8 +112,8 @@ class Agent:
         actions_, positions = self.actor(states)
         loss_actor = -self.critic(states, actions_)
         loss_actor = torch.mean(loss_actor)
-        dists = positions - locs
-        loss_actor += torch.sum(dists * dists, dim=-1).mean()
+        # dists = positions - locs
+        # loss_actor += torch.sum(dists * dists, dim=-1).mean()
         loss_actor.backward()
         nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_norm)
         self.optim_actor.step()
