@@ -29,15 +29,29 @@ class Actor(nn.Module):
         self.action_amp = action_amp
     
     def forward(self, state):
-        x = nn.functional.sigmoid(self.lin1(state))
-        x = self.lin2(x).view(-1, 2 * self.actions)
+        h = nn.functional.sigmoid(nn.functional.linear(
+            state, self.transform_weights(self.lin1.weight), self.lin1.bias))
+        x = self.lin2(h).view(-1, 2 * self.actions)
         actions, positions = x[:,:self.actions], x[:,self.actions:]
         
         actions = nn.functional.tanh(actions) * self.action_amp
         positions = nn.functional.sigmoid(positions)
         positions = positions * self.position_amp + self.bounds[0]
         
-        return actions.squeeze(), positions.squeeze()
+        return actions.squeeze(), positions.squeeze(), h
+
+    @staticmethod
+    def transform_weights(weights):
+        return torch.pow(weights, 2)
+
+    # A separate method for this allows combining different
+    # regularization terms for different parts of the network
+    def normalization_loss(self):
+        loss = self.transform_weights(self.lin1.weight).sum()
+        loss += self.lin1.bias.abs().sum()
+        loss += torch.pow(self.lin2.weight, 2).sum()
+        loss += torch.pow(self.lin2.bias, 2).sum()
+        return loss
 
 
 class Agent:

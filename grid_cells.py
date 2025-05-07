@@ -24,7 +24,8 @@ class GridCellModule:
         lines = [self.zeros_with_line(*line_aa(*l)) for l in lines]
 
         image = np.sum(lines, axis=0) > 1
-        image = self.clean_image(image)
+        image = self.clean_image(image).astype(float)
+        image *= np.random.uniform(0.5, 1.5, image.shape)
         image = self.convolve(image, self.get_gaussian_kernel())
 
         self.grid_cell = image / image.max()
