@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import numpy as np
 
 
@@ -11,9 +12,9 @@ def gaussian_grid(coords, gaussians):
                        for dist in gaussians]).sum(axis=0) / len(gaussians)
 
 def get_coords(resolution, MIN=-1, MAX=1):
-    x, y = np.linspace(MIN, MAX, resolution), np.linspace(MIN, MAX, resolution)
-    xx, yy = np.meshgrid(x, y)
-    return np.concatenate([xx[:,:,np.newaxis], yy[:,:,np.newaxis]], axis=-1)
+    x = torch.linspace(MIN, MAX, resolution, device=device)
+    x = torch.meshgrid(x, x, indexing='xy')
+    return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
     
 def get_loc_batch(coords, grid_cells, bs=64):
     states = torch.rand(bs, 2, device=device) * 2 - 1
@@ -50,3 +51,30 @@ class ReplayBuffer:
     def sample(self, bs):
         i = torch.ones(min(self.max, self.counter), device=device).multinomial(min(bs, self.counter, self.max))
         return self.states[i], self.actions[i], self.rewards[i], self.states_[i], self.dones[i], self.locs[i]
+    
+    
+class PlaceFields(nn.Module):
+    def __init__(self, coords, N):
+        super().__init__()
+        self.coords = coords
+        self.N = N
+        
+        self.means = nn.Parameter(torch.zeros(N, 2, device=device))
+        self.cov_inv_diag = nn.Parameter(torch.ones(N, 2, device=device))
+        self.cov_inv_off_diag = nn.Parameter(torch.zeros(N, 1, device=device))
+        self.scales = nn.Parameter(torch.ones(N, 1, device=device))
+    
+    def forward(self, real):
+        return torch.pow(self.predict() - real, 2).sum()
+    
+    # The covariance is symmetric so off-diagonals are the same in the the 2D case
+    def get_cov_inv(self):
+        cov_inv = torch.diag_embed(self.cov_inv_diag)
+        cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
+        return cov_inv
+    
+    # Calculate parametrized scaled Gaussian PDF over all coordinates
+    def predict(self):
+        diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        pred = self.scales * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+        return pred.view(self.N, *self.coords.shape[:-1])
