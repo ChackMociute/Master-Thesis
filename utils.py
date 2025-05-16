@@ -65,22 +65,31 @@ class ReplayBuffer:
     
     
 class PlaceFields(nn.Module):
-    def __init__(self, coords, flanks, N):
+    def __init__(self, coords, flanks, targets):
         super().__init__()
         self.coords = coords
         self.flanks = flanks
-        self.N = N
+        self.targets = targets
+        self.N = targets.shape[0]
         
-        self.means = nn.Parameter(torch.zeros(N, 2, device=device))
-        self.cov_inv_diag = nn.Parameter(torch.ones(N, 2, device=device))
-        self.cov_inv_off_diag = nn.Parameter(torch.zeros(N, 1, device=device))
-        self.scales = nn.Parameter(torch.ones(N, 1, device=device))
+        self.means = nn.Parameter(torch.zeros(self.N, 2, device=device))
+        self.cov_inv_diag = nn.Parameter(torch.ones(self.N, 2, device=device) * 2.3) # e^2.3 ~ 10
+        self.cov_inv_off_diag = nn.Parameter(torch.zeros(self.N, 1, device=device))
+        self.scales = nn.Parameter(torch.ones(self.N, 1, device=device))
     
-    def forward(self, real):
+    def informed_init(self):
+        idx = self.targets.view(self.N, -1).argmax(1)
+        xx = idx // self.coords.shape[0]
+        yy = idx % self.coords.shape[1]
+
+        self.scales.data = self.targets.view(self.N, -1).max(1, keepdim=True)[0].sqrt()
+        self.means.data = self.coords[xx, yy]
+
+    def forward(self):
         # High flank loss ensures that the Gaussian does not drift beyond the range
         # of the coordinates (at the cost of introducing some bias around the edges)
         flank_loss = self.calc_gaussian(self.flanks).sum() * 5
-        pred_loss = torch.pow(self.predict() - real, 2).sum()
+        pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
         return pred_loss + flank_loss
     
     # The covariance is symmetric so off-diagonals are the same in the the 2D case
@@ -98,7 +107,7 @@ class PlaceFields(nn.Module):
         diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
         return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
     
-    def fit(self, target, epochs=3000, optim=None, use_scheduler=True, gamma=0.8, scheduler_updates=6, progress=True):
+    def fit(self, epochs=3000, optim=None, use_scheduler=True, gamma=0.8, scheduler_updates=6, progress=True):
         if optim is None:
             optim = RMSprop(self.parameters(), lr=1e-2)
         if use_scheduler:
@@ -108,7 +117,7 @@ class PlaceFields(nn.Module):
         losses = list()
         for i in tqdm(range(epochs), disable=not progress):
             optim.zero_grad()
-            loss = self(target)
+            loss = self()
             loss.backward()
             optim.step()
             losses.append(loss.detach().cpu().item())
