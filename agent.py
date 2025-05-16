@@ -21,7 +21,9 @@ class Critic(nn.Module):
 class Actor(nn.Module):
     def __init__(self, inp_size, actions, bounds, hidden=128, action_amp=1):
         super().__init__()
-        self.lin1 = nn.Linear(inp_size, hidden)
+        self.w1 = nn.parameter.Parameter(torch.Tensor(hidden, inp_size).exponential_(lambd=1))
+        self.b1 = nn.parameter.Parameter(torch.zeros(hidden))
+        self.norm = nn.LayerNorm(hidden)
         self.lin2 = nn.Linear(hidden, 2 * actions)
         self.actions = actions
         self.bounds = bounds
@@ -29,30 +31,34 @@ class Actor(nn.Module):
         self.action_amp = action_amp
     
     def forward(self, state):
-        # h = nn.functional.sigmoid(nn.functional.linear(
-        #     state, self.transform_weights(self.lin1.weight), self.lin1.bias))
-        h = nn.functional.sigmoid(self.lin1(state))
-        x = self.lin2(h).view(-1, 2 * self.actions)
+        self.hidden = self.lin1(state)
+        x = self.lin2(self.hidden).view(-1, 2 * self.actions)
         actions, positions = x[:,:self.actions], x[:,self.actions:]
         
         actions = nn.functional.tanh(actions) * self.action_amp
         positions = nn.functional.sigmoid(positions)
         positions = positions * self.position_amp + self.bounds[0]
         
-        return actions.squeeze(), positions.squeeze(), h
+        return actions.squeeze(), positions.squeeze()
+    
+    def clamp_weights(self):
+        self.w1.data = self.w1.data.clamp(0)
 
-    @staticmethod
-    def transform_weights(weights):
-        return torch.pow(weights, 2)
+    def lin1(self, x):
+        return nn.functional.sigmoid(self.norm(nn.functional.linear(x, self.w1, self.b1)))
 
-    # A separate method for this allows combining different
+    # A separate method for reguralization allows combining different
     # regularization terms for different parts of the network
-    def normalization_loss(self):
-        loss = self.transform_weights(self.lin1.weight).sum()
-        loss += torch.pow(self.lin1.bias, 2).sum()
-        loss += torch.pow(self.lin2.weight, 2).sum()
-        loss += torch.pow(self.lin2.bias, 2).sum()
-        return loss
+    def regularization_loss(self, l1, l2):
+        l1_loss = self.w1.abs().sum()
+        l2_loss = torch.pow(self.w1, 2).sum()
+        l2_loss += torch.pow(self.b1, 2).sum()
+        l2_loss += torch.pow(self.lin2.weight, 2).sum()
+        l2_loss += torch.pow(self.lin2.bias, 2).sum()
+        return l1 * l1_loss + l2 * l2_loss
+    
+    def hidden_loss(self, weight):
+        return torch.sum(self.hidden, dim=-1).mean() * weight
 
 
 class Agent:
