@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from torch.optim import RMSprop
+from torch.optim.lr_scheduler import ExponentialLR
+from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
@@ -94,3 +97,22 @@ class PlaceFields(nn.Module):
     def calc_gaussian(self, coords):
         diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
         return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+    
+    def fit(self, target, epochs=3000, optim=None, use_scheduler=True, gamma=0.8, scheduler_updates=6, progress=True):
+        if optim is None:
+            optim = RMSprop(self.parameters(), lr=1e-2)
+        if use_scheduler:
+            scheduler = ExponentialLR(optim, gamma=gamma)
+            lr_epochs = epochs // scheduler_updates
+        
+        losses = list()
+        for i in tqdm(range(epochs), disable=not progress):
+            optim.zero_grad()
+            loss = self(target)
+            loss.backward()
+            optim.step()
+            losses.append(loss.detach().cpu().item())
+            if use_scheduler and i % lr_epochs == 0 and i != 0:
+                scheduler.step()
+        
+        return losses
