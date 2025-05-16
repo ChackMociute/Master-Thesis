@@ -15,6 +15,14 @@ def get_coords(resolution, MIN=-1, MAX=1):
     x = torch.linspace(MIN, MAX, resolution, device=device)
     x = torch.meshgrid(x, x, indexing='xy')
     return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
+
+# Only works for square coordinates centered around 0
+def get_flanks(res, reach=1, bounds=1.1):
+    flanks = torch.linspace(-bounds, bounds, res, device=device)
+    flanks = torch.meshgrid(flanks, flanks, indexing='xy')
+    flanks = torch.stack(flanks).view(2, -1).T
+    mask = torch.any(flanks.abs() > reach, 1)
+    return flanks[mask]
     
 def get_loc_batch(coords, grid_cells, bs=64):
     states = torch.rand(bs, 2, device=device) * 2 - 1
@@ -54,9 +62,10 @@ class ReplayBuffer:
     
     
 class PlaceFields(nn.Module):
-    def __init__(self, coords, N):
+    def __init__(self, coords, flanks, N):
         super().__init__()
         self.coords = coords
+        self.flanks = flanks
         self.N = N
         
         self.means = nn.Parameter(torch.zeros(N, 2, device=device))
@@ -65,16 +74,23 @@ class PlaceFields(nn.Module):
         self.scales = nn.Parameter(torch.ones(N, 1, device=device))
     
     def forward(self, real):
-        return torch.pow(self.predict() - real, 2).sum()
+        # High flank loss ensures that the Gaussian does not drift beyond the range
+        # of the coordinates (at the cost of introducing some bias around the edges)
+        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        pred_loss = torch.pow(self.predict() - real, 2).sum()
+        return pred_loss + flank_loss
     
     # The covariance is symmetric so off-diagonals are the same in the the 2D case
     def get_cov_inv(self):
-        cov_inv = torch.diag_embed(self.cov_inv_diag)
+        cov_inv = torch.diag_embed(self.cov_inv_diag.exp())
         cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
         return cov_inv
     
     # Calculate parametrized scaled Gaussian PDF over all coordinates
     def predict(self):
-        diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
-        pred = self.scales * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+        pred = self.calc_gaussian(self.coords)
         return pred.view(self.N, *self.coords.shape[:-1])
+    
+    def calc_gaussian(self, coords):
+        diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
