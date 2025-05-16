@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from torch.optim import RMSprop
+from torch.optim.lr_scheduler import ExponentialLR
+from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
@@ -15,6 +18,14 @@ def get_coords(resolution, MIN=-1, MAX=1):
     x = torch.linspace(MIN, MAX, resolution, device=device)
     x = torch.meshgrid(x, x, indexing='xy')
     return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
+
+# Only works for square coordinates centered around 0
+def get_flanks(res, reach=1, bounds=1.1):
+    flanks = torch.linspace(-bounds, bounds, res, device=device)
+    flanks = torch.meshgrid(flanks, flanks, indexing='xy')
+    flanks = torch.stack(flanks).view(2, -1).T
+    mask = torch.any(flanks.abs() > reach, 1)
+    return flanks[mask]
     
 def get_loc_batch(coords, grid_cells, bs=64):
     states = torch.rand(bs, 2, device=device) * 2 - 1
@@ -54,27 +65,63 @@ class ReplayBuffer:
     
     
 class PlaceFields(nn.Module):
-    def __init__(self, coords, N):
+    def __init__(self, coords, flanks, targets):
         super().__init__()
         self.coords = coords
-        self.N = N
+        self.flanks = flanks
+        self.targets = targets
+        self.N = targets.shape[0]
         
-        self.means = nn.Parameter(torch.zeros(N, 2, device=device))
-        self.cov_inv_diag = nn.Parameter(torch.ones(N, 2, device=device))
-        self.cov_inv_off_diag = nn.Parameter(torch.zeros(N, 1, device=device))
-        self.scales = nn.Parameter(torch.ones(N, 1, device=device))
+        self.means = nn.Parameter(torch.zeros(self.N, 2, device=device))
+        self.cov_inv_diag = nn.Parameter(torch.ones(self.N, 2, device=device) * 2.3) # e^2.3 ~ 10
+        self.cov_inv_off_diag = nn.Parameter(torch.zeros(self.N, 1, device=device))
+        self.scales = nn.Parameter(torch.ones(self.N, 1, device=device))
     
-    def forward(self, real):
-        return torch.pow(self.predict() - real, 2).sum()
+    def informed_init(self):
+        idx = self.targets.view(self.N, -1).argmax(1)
+        xx = idx // self.coords.shape[0]
+        yy = idx % self.coords.shape[1]
+
+        self.scales.data = self.targets.view(self.N, -1).max(1, keepdim=True)[0].sqrt()
+        self.means.data = self.coords[xx, yy]
+
+    def forward(self):
+        # High flank loss ensures that the Gaussian does not drift beyond the range
+        # of the coordinates (at the cost of introducing some bias around the edges)
+        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
+        return pred_loss + flank_loss
     
     # The covariance is symmetric so off-diagonals are the same in the the 2D case
     def get_cov_inv(self):
-        cov_inv = torch.diag_embed(self.cov_inv_diag)
+        cov_inv = torch.diag_embed(self.cov_inv_diag.exp())
         cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
         return cov_inv
     
     # Calculate parametrized scaled Gaussian PDF over all coordinates
     def predict(self):
-        diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
-        pred = self.scales * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+        pred = self.calc_gaussian(self.coords)
         return pred.view(self.N, *self.coords.shape[:-1])
+    
+    def calc_gaussian(self, coords):
+        diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+    
+    def fit(self, epochs=3000, optim=None, use_scheduler=True, gamma=0.8, scheduler_updates=6, progress=True):
+        if optim is None:
+            optim = RMSprop(self.parameters(), lr=1e-2)
+        if use_scheduler:
+            scheduler = ExponentialLR(optim, gamma=gamma)
+            lr_epochs = epochs // scheduler_updates
+        
+        losses = list()
+        for i in tqdm(range(epochs), disable=not progress):
+            optim.zero_grad()
+            loss = self()
+            loss.backward()
+            optim.step()
+            losses.append(loss.detach().cpu().item())
+            if use_scheduler and i % lr_epochs == 0 and i != 0:
+                scheduler.step()
+        
+        return losses
