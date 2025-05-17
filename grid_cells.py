@@ -91,14 +91,14 @@ class GridCellModule:
         return conv[-image.shape[0]:, -image.shape[1]:]
     
     # Angle in degrees
-    def reset_module(self, rot_angle):
+    def reset_module(self, rot_angle, displacement):
         gc = rotate(self.grid_cell, rot_angle, reshape=False)
         gcs = np.tile(gc, (self.n, 1, 1))
-        self.grid_cells = self.add_phase(gcs, rot_angle)
+        self.grid_cells = self.add_phase(gcs, rot_angle, displacement)
     
-    def add_phase(self, grid_cells, rot_angle):
+    def add_phase(self, grid_cells, rot_angle, displacement):
         p = np.linspace(-self.period / 2, self.period / 2, int(np.sqrt(self.n)))
-        phases = np.stack(np.meshgrid(p, p)).reshape(2, -1).T
+        phases = np.stack(np.meshgrid(p, p)).reshape(2, -1).T + displacement
         shear = self.shear2d(np.pi / 6).T
         rot = self.rot2d(rot_angle / 180 * np.pi).T
         phases = phases @ shear @ rot
@@ -132,10 +132,25 @@ class GridCells:
         # Initialize grid cell orientation in a new environment
         env = str(env)
         if env not in self.envs.keys() or env == 'random':
-            self.envs[env] = np.random.randint(*self.ROTATION_RANGE, size=len(self.modules)).tolist()
+            self.envs[env] = dict(
+                rotations=self.sample_rotations(),
+                displacements=self.sample_displacements()
+            )
         
-        for module, angle in zip(self.modules, self.envs[env]):
-            module.reset_module(angle)
+        angles = self.envs[env]['rotations']
+        shifts = self.envs[env]['displacements']
+
+        for module, angle, displacement in zip(self.modules, angles, shifts):
+            module.reset_module(angle, displacement)
+    
+    # Convert to list so JSON can dump it
+    def sample_rotations(self):
+        return np.random.randint(*self.ROTATION_RANGE, size=len(self.modules)).tolist()
+    
+    def sample_displacements(self):
+        # The maximum observed displacement is close to half the period
+        periods = np.asarray([m.period for m in self.modules]) / 2
+        return np.random.uniform(-periods, periods, (2, len(periods))).T.tolist()
     
     def compile_numpy(self):
         self.grid_cells = np.concatenate([module.grid_cells for module in self.modules])
