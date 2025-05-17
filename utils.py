@@ -35,6 +35,37 @@ def get_loc_batch(coords, grid_cells, bs=64):
     cc = idx % coords.shape[1]
     return grid_cells[(rr, cc)], states
 
+def eval_position(agent, coords, grid_cells, size=4096):
+    losses = list()
+    for _ in range(size // 256):
+        x, y = get_loc_batch(coords, grid_cells, bs=256)
+        x = agent.actor(x)[1]
+        loss = torch.sum((x - y)**2).detach().cpu().numpy()
+        losses.append(loss)
+    return np.mean(losses)
+
+def print_stats(w):
+    print("min   |max  |mean |std  |shape")
+    print(f"{w.min():.03f}|{w.max():.03f}|{w.mean():.03f}|{w.std():.03f}|{w.shape}")
+
+def eval_locomotion(agent, env, n_ep=200, maxlen=50):
+    rewards, lengths = list(), list()
+    print("Starting evaluation")
+    for _ in tqdm(range(n_ep)):
+        reward = list()
+        s = env.reset(end_radius=0.25)
+        step = 0
+        done = False
+        while not done and step < maxlen:
+            a = agent.choose_action(s, evaluate=True)
+            s_new, r, done = env.next_state(a)
+            s = s_new
+            step += 1
+            reward.append(r)
+        rewards.append(sum(reward))
+        lengths.append(step)
+    return sum(rewards) / len(rewards), sum(lengths) / len(lengths)
+
 to_tensor = lambda x: torch.tensor(x, device=device, dtype=torch.float32)
 
 

@@ -21,6 +21,7 @@ class Experiment:
         wd_l1=0,
         wd_l2=0,
         hidden_penalty=2e-2,
+        save_losses=True,
         **agent_kwargs
     ):
         self.name = name
@@ -36,6 +37,8 @@ class Experiment:
         self.wd = (wd_l1, wd_l2)
         self.hidden_penalty = hidden_penalty
 
+        self.save_losses = save_losses
+
         self.store_experiment_kwargs()
         self.agent_kwargs = agent_kwargs
     
@@ -48,7 +51,8 @@ class Experiment:
             n_per_module=self.n_per_module,
             wd_l1=self.wd[0],
             wd_l2=self.wd[1],
-            hidden_penalty=self.hidden_penalty
+            hidden_penalty=self.hidden_penalty,
+            save_losses=self.save_losses
         )
     
     def compile_grid_cells(self, env):
@@ -59,6 +63,8 @@ class Experiment:
     def fit_positions(self, batches=50000, bs=256, progress=True):
         losses = [self.fit_position_batch(*get_loc_batch(self.coords, self.grid_cells, bs=bs))
                   for _ in tqdm(range(batches), disable=not progress)]
+        if self.save_losses:
+            self.pos_losses = losses
         return losses
     
     def fit_position_batch(self, x, y):
@@ -75,9 +81,12 @@ class Experiment:
         
         return loss.detach().cpu().item()
     
-    def fit_gaussians(self, epochs=3000, scheduler_updates=6, progress=True, N=None):
+    def fit_place_fields(self, epochs=3000, scheduler_updates=6, progress=True, N=None):
         self.initialize_place_fields(N=N)
-        return self.pfs.fit(epochs=epochs, scheduler_updates=scheduler_updates, progress=progress)
+        losses = self.pfs.fit(epochs=epochs, scheduler_updates=scheduler_updates, progress=progress)
+        if self.save_losses:
+            self.pfs_losses = losses
+        return losses
     
     def initialize_place_fields(self, N=None):
         gc_initialized = hasattr(self, 'grid_cells')
@@ -117,6 +126,9 @@ class Experiment:
             experiment_kwargs=self.experiment_kwargs,
             agent_kwargs=self.agent_kwargs
         )
+
+        if self.save_losses:
+            metadata |= dict(pos_losses=self.pos_losses, pfs_losses=self.pfs_losses)
         
         with open(os.path.join(path, 'metadata.json'), 'w') as f:
             f.write(json.dumps(metadata))
@@ -132,6 +144,9 @@ class Experiment:
         
         exp = Experiment(name, **metadata['experiment_kwargs'], **metadata['agent_kwargs'])
         exp.gcs.envs = metadata['envs']
+        if exp.save_losses:
+            exp.pos_losses = metadata['pos_losses']
+            exp.pfs_losses = metadata['pfs_losses']
 
         state_dicts = torch.load(os.path.join(path, "models.pt"))
         pfs_state_dict = state_dicts.pop('pfs', None)
