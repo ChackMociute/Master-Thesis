@@ -140,3 +140,25 @@ class Agent:
         self.optim_actor.step()
         
         self.update_target_networks()
+    
+    def collate_state_dicts(self, add_buffer=False):
+        state_dicts = dict(
+            actor=self.actor.state_dict(),
+            critic=self.critic.state_dict(),
+            target_actor=self.target_actor.state_dict(),
+            target_critic=self.target_critic.state_dict(),
+            optim_actor=self.optim_actor.state_dict(),
+            optim_critic=self.optim_critic.state_dict(),
+            # place_fields=self.pfs.state_dict()
+        )
+        
+        if add_buffer:
+            state_dicts['buffer'] = self.buffer
+        
+        return state_dicts
+    
+    def load_from_state_dicts(self, state_dicts):
+        if 'buffer' in state_dicts.keys():
+            self.buffer = state_dicts.pop('buffer')
+        for k, v in state_dicts.items():
+            getattr(self, k).load_state_dict(v)
