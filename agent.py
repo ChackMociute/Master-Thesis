@@ -148,8 +148,7 @@ class Agent:
             target_actor=self.target_actor.state_dict(),
             target_critic=self.target_critic.state_dict(),
             optim_actor=self.optim_actor.state_dict(),
-            optim_critic=self.optim_critic.state_dict(),
-            # place_fields=self.pfs.state_dict()
+            optim_critic=self.optim_critic.state_dict()
         )
         
         if add_buffer:

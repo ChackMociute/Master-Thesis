@@ -65,20 +65,25 @@ class ReplayBuffer:
     
     
 class PlaceFields(nn.Module):
-    def __init__(self, coords, flanks, targets):
+    def __init__(self, coords, flanks, N):
         super().__init__()
         self.coords = coords
         self.flanks = flanks
-        self.targets = targets
-        self.N = targets.shape[0]
         self.bounds = (coords.min() * 1.1, coords.max() * 1.1)
-        
+        self.N = N
+
         self.means = nn.Parameter(torch.zeros(self.N, 2, device=device))
         self.cov_inv_diag = nn.Parameter(torch.ones(self.N, 2, device=device) * 2.3) # e^2.3 ~ 10
         self.cov_inv_off_diag = nn.Parameter(torch.zeros(self.N, 1, device=device))
         self.scales = nn.Parameter(torch.ones(self.N, 1, device=device))
     
+    def add_targets(self, targets):
+        assert targets.shape[0] == self.N
+        self.targets = targets
+
     def informed_init(self):
+        if not hasattr(self, 'targets'):
+            raise AttributeError("Targets must be added before an informed initialization can be made")
         idx = self.targets.view(self.N, -1).argmax(1)
         xx = idx // self.coords.shape[0]
         yy = idx % self.coords.shape[1]
@@ -86,28 +91,6 @@ class PlaceFields(nn.Module):
         self.scales.data = self.targets.view(self.N, -1).max(1, keepdim=True)[0].sqrt()
         self.means.data = self.coords[xx, yy]
         self.cov_inv_diag.data = torch.ones(self.N, 2, device=device) * 4.6 # e^4.6 ~ 100
-
-    def forward(self):
-        # High flank loss ensures that the Gaussian does not drift beyond the range
-        # of the coordinates (at the cost of introducing some bias around the edges)
-        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
-        pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
-        return pred_loss + flank_loss
-    
-    # The covariance is symmetric so off-diagonals are the same in the the 2D case
-    def get_cov_inv(self):
-        cov_inv = torch.diag_embed(self.cov_inv_diag.exp())
-        cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
-        return cov_inv
-    
-    # Calculate parametrized scaled Gaussian PDF over all coordinates
-    def predict(self):
-        pred = self.calc_gaussian(self.coords)
-        return pred.view(self.N, *self.coords.shape[:-1])
-    
-    def calc_gaussian(self, coords):
-        diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
-        return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
     
     def fit(self, epochs=3000, optim=None, use_scheduler=True, gamma=0.8, scheduler_updates=6, progress=True):
         if optim is None:
@@ -128,3 +111,25 @@ class PlaceFields(nn.Module):
                 scheduler.step()
         
         return losses
+
+    def forward(self):
+        # High flank loss ensures that the Gaussian does not drift beyond the range
+        # of the coordinates (at the cost of introducing some bias around the edges)
+        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
+        return pred_loss + flank_loss
+    
+    def calc_gaussian(self, coords):
+        diff = coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        return torch.pow(self.scales, 2) * torch.e ** -((diff * (diff @ self.get_cov_inv())).sum(-1) / 2)
+    
+    # Calculate parametrized scaled Gaussian PDF over all coordinates
+    def predict(self):
+        pred = self.calc_gaussian(self.coords)
+        return pred.view(self.N, *self.coords.shape[:-1])
+    
+    # The covariance is symmetric so off-diagonals are the same in the the 2D case
+    def get_cov_inv(self):
+        cov_inv = torch.diag_embed(self.cov_inv_diag.exp())
+        cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
+        return cov_inv
