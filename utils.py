@@ -71,6 +71,7 @@ class PlaceFields(nn.Module):
         self.flanks = flanks
         self.targets = targets
         self.N = targets.shape[0]
+        self.bounds = (coords.min() * 1.1, coords.max() * 1.1)
         
         self.means = nn.Parameter(torch.zeros(self.N, 2, device=device))
         self.cov_inv_diag = nn.Parameter(torch.ones(self.N, 2, device=device) * 2.3) # e^2.3 ~ 10
@@ -84,6 +85,7 @@ class PlaceFields(nn.Module):
 
         self.scales.data = self.targets.view(self.N, -1).max(1, keepdim=True)[0].sqrt()
         self.means.data = self.coords[xx, yy]
+        self.cov_inv_diag.data = torch.ones(self.N, 2, device=device) * 4.6 # e^4.6 ~ 100
 
     def forward(self):
         # High flank loss ensures that the Gaussian does not drift beyond the range
@@ -117,6 +119,7 @@ class PlaceFields(nn.Module):
         losses = list()
         for i in tqdm(range(epochs), disable=not progress):
             optim.zero_grad()
+            self.means.data = torch.clip(self.means, *self.bounds)
             loss = self()
             loss.backward()
             optim.step()
