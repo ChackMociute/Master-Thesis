@@ -25,7 +25,7 @@ class GridCellModule:
 
         image = np.sum(lines, axis=0) > 1
         image = self.clean_image(image).astype(float)
-        image *= np.random.uniform(0.5, 1.5, image.shape)
+        # image *= np.random.uniform(0.5, 1.5, image.shape)
         image = self.convolve(image, self.get_gaussian_kernel())
 
         self.grid_cell = image / image.max()
@@ -130,8 +130,9 @@ class GridCells:
     
     def reset_modules(self, env='random'):
         # Initialize grid cell orientation in a new environment
+        env = str(env)
         if env not in self.envs.keys() or env == 'random':
-            self.envs[env] = np.random.randint(*self.ROTATION_RANGE, size=len(self.modules))
+            self.envs[env] = np.random.randint(*self.ROTATION_RANGE, size=len(self.modules)).tolist()
         
         for module, angle in zip(self.modules, self.envs[env]):
             module.reset_module(angle)
