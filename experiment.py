@@ -5,31 +5,33 @@ import numpy as np
 
 from agent import Agent
 from grid_cells import GridCells
-from utils import PlaceFields, to_tensor, get_coords, get_flanks, get_loc_batch
 from tqdm import tqdm
+from utils import (PlaceFields, to_tensor,
+                   get_coords, get_flanks,
+                   get_loc_batch, eval_position,
+                   parser)
 
 
 class Experiment:
-    def __init__(
-        self,
-        name,
-        resolution=400,
-        coord_bounds=(-1, 1),
-        scale_bounds=(90, 300),
-        n_modules=10,
-        n_per_module=100, # Must be a square number (4, 9, 16, ...)
-        wd_l1=0,
-        wd_l2=0,
-        hidden_penalty=2e-2,
-        save_losses=True,
-        **agent_kwargs
-    ):
+    def __init__(self, name,
+                 resolution=400,
+                 coord_bounds=(-1, 1),
+                 gc_scale_min=90,
+                 gc_scale_max=300,
+                 n_modules=10,
+                 n_per_module=100, # Must be a square number (4, 9, 16, ...)
+                 wd_l1=0,
+                 wd_l2=0,
+                 hidden_penalty=2e-2,
+                 save_losses=True,
+                 **agent_kwargs
+                 ):
         self.name = name
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
         
         self.res = resolution
         self.coords = get_coords(resolution, *coord_bounds)
-        self.scales = np.linspace(*scale_bounds, n_modules, dtype=int)
+        self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
         self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution)
@@ -46,7 +48,8 @@ class Experiment:
         self.experiment_kwargs = dict(
             resolution=self.res,
             coord_bounds=(self.coords.min().item(), self.coords.max().item()),
-            scale_bounds=(self.scales.min().item(), self.scales.max().item()),
+            gc_scale_min=self.scales.min().item(),
+            gc_scale_max=self.scales.max().item(),
             n_modules=len(self.scales),
             n_per_module=self.n_per_module,
             wd_l1=self.wd[0],
@@ -157,3 +160,17 @@ class Experiment:
             exp.pfs.load_state_dict(pfs_state_dict)
         
         return exp
+    
+
+if __name__ == "__main__":
+    kwargs = vars(parser.parse_args())
+
+    exp = Experiment(**kwargs)
+    exp.compile_grid_cells(1)
+
+    exp.fit_positions()
+    exp.fit_place_fields()
+
+    exp.save()
+
+    print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03f}")

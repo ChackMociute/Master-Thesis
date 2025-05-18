@@ -2,11 +2,34 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from argparse import ArgumentParser
 from torch.optim import RMSprop
 from torch.optim.lr_scheduler import ExponentialLR
 from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
+
+parser = ArgumentParser()
+parser.add_argument('--name', required=True)
+parser.add_argument('--n_modules', type=int, default=10)
+parser.add_argument('--n_per_module', type=int, default=100, help="Must be a square (4, 9, 16, ...)")
+parser.add_argument('--gc_scale_min', type=int, default=90)
+parser.add_argument('--gc_scale_max', type=int, default=300)
+parser.add_argument('--wd_l1', type=float, default=1e-5)
+parser.add_argument('--wd_l2', type=float, default=1e-7)
+parser.add_argument('--hidden_penalty', type=float, default=2e-2)
+parser.add_argument('--save_losses', action='store_true')
+parser.add_argument('--exploration_std', type=float, default=0.1)
+parser.add_argument('--bs', type=int, default=64)
+parser.add_argument('--tau', type=float, default=5e-3)
+parser.add_argument('--buffer_length', type=int, default=1000)
+parser.add_argument('--actor_hidden', type=int, default=128)
+parser.add_argument('--critic_hidden', type=int, default=256)
+parser.add_argument('--lr_a', type=float, default=3e-4)
+parser.add_argument('--wd_a', type=float, default=1e-5)
+parser.add_argument('--lr_c', type=float, default=5e-4)
+parser.add_argument('--wd_c', type=float, default=1e-5)
+parser.add_argument('--grad_norm', type=float, default=1e-1)
 
 
 def gaussian_grid(coords, gaussians):
