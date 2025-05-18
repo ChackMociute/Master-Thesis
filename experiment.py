@@ -93,7 +93,8 @@ class Experiment:
     
     def initialize_place_fields(self, N=None):
         gc_initialized = hasattr(self, 'grid_cells')
-        assert gc_initialized or N is not None, "If grid cells have not been initialized, N should be specified manually"
+        if not gc_initialized and N is None:
+            raise AttributeError("If grid cells have not been initialized, N should be specified manually")
         
         if gc_initialized:
             targets = self.calc_pfs_targets()[:N]
@@ -164,12 +165,15 @@ class Experiment:
 
 if __name__ == "__main__":
     kwargs = vars(parser.parse_args())
+    batches = kwargs.pop('batches')
+    pf_epochs = kwargs.pop('pf_epochs')
+    scheduler_updates = kwargs.pop('scheduler_updates')
 
     exp = Experiment(**kwargs)
     exp.compile_grid_cells(1)
 
-    exp.fit_positions()
-    exp.fit_place_fields()
+    exp.fit_positions(batches)
+    exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
     exp.save()
 

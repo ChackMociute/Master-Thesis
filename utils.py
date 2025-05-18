@@ -11,6 +11,9 @@ device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
 parser = ArgumentParser()
 parser.add_argument('--name', required=True)
+parser.add_argument('--batches', type=int, default=50000)
+parser.add_argument('--pf_epochs', type=int, default=3000)
+parser.add_argument('--scheduler_updates', type=int, default=6)
 parser.add_argument('--n_modules', type=int, default=10)
 parser.add_argument('--n_per_module', type=int, default=100, help="Must be a square (4, 9, 16, ...)")
 parser.add_argument('--gc_scale_min', type=int, default=90)
@@ -151,7 +154,7 @@ class PlaceFields(nn.Module):
             optim = RMSprop(self.parameters(), lr=1e-2)
         if use_scheduler:
             scheduler = ExponentialLR(optim, gamma=gamma)
-            lr_epochs = epochs // scheduler_updates
+            lr_epochs = epochs // (scheduler_updates + 1)
         
         losses = list()
         for i in tqdm(range(epochs), disable=not progress):
