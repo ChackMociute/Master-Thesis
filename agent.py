@@ -50,15 +50,15 @@ class Actor(nn.Module):
     # A separate method for reguralization allows combining different
     # regularization terms for different parts of the network
     def regularization_loss(self, l1, l2):
-        l1_loss = self.w1.abs().sum()
-        l2_loss = torch.pow(self.w1, 2).sum()
-        l2_loss += torch.pow(self.b1, 2).sum()
-        l2_loss += torch.pow(self.lin2.weight, 2).sum()
-        l2_loss += torch.pow(self.lin2.bias, 2).sum()
+        l1_loss = self.w1.abs().mean()
+        l2_loss = self.w1.pow(2).mean()
+        l2_loss += self.b1.pow(2).mean()
+        l2_loss += self.lin2.weight.pow(2).mean()
+        l2_loss += self.lin2.bias.pow(2).mean()
         return l1 * l1_loss + l2 * l2_loss
     
     def hidden_loss(self, weight):
-        return torch.sum(self.hidden, dim=-1).mean() * weight
+        return self.hidden.sum(dim=-1).mean() * weight
 
 
 class Agent:
