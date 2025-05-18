@@ -28,7 +28,6 @@ class Experiment:
                  ):
         self.name = name
         self.res = resolution
-        self.save_losses = save_losses
         self.wd = (wd_l1, wd_l2)
         self.hidden_penalty = hidden_penalty
         
@@ -41,6 +40,9 @@ class Experiment:
 
         self.pfs_per_env = dict()
         self.current_env = None
+
+        self.save_losses = save_losses
+        self.pfs_losses = dict()
 
         self.store_experiment_kwargs()
         self.agent_kwargs = agent_kwargs
@@ -94,7 +96,7 @@ class Experiment:
 
         losses = self.pfs.fit(epochs=epochs, scheduler_updates=scheduler_updates, progress=progress)
         if self.save_losses:
-            self.pfs_losses = losses
+            self.pfs_losses[self.current_env] = losses
         return losses
     
     def initialize_place_fields(self, N, env=None, state_dict=None):
