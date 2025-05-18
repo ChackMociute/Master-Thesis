@@ -27,19 +27,20 @@ class Experiment:
                  **agent_kwargs
                  ):
         self.name = name
-        self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
-        
         self.res = resolution
+        self.save_losses = save_losses
+        self.wd = (wd_l1, wd_l2)
+        self.hidden_penalty = hidden_penalty
+        
         self.coords = get_coords(resolution, *coord_bounds)
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
         self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution)
-        
-        self.wd = (wd_l1, wd_l2)
-        self.hidden_penalty = hidden_penalty
+        self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
-        self.save_losses = save_losses
+        self.pfs_per_env = dict()
+        self.current_env = None
 
         self.store_experiment_kwargs()
         self.agent_kwargs = agent_kwargs
@@ -59,6 +60,7 @@ class Experiment:
         )
     
     def compile_grid_cells(self, env):
+        self.current_env = env
         self.gcs.reset_modules(env)
         self.gcs.compile_numpy()
         self.grid_cells = to_tensor(self.gcs.grid_cells.transpose(1, 2, 0))
@@ -85,27 +87,34 @@ class Experiment:
         return loss.detach().cpu().item()
     
     def fit_place_fields(self, epochs=3000, scheduler_updates=6, progress=True, N=None):
-        self.initialize_place_fields(N=N)
+        N = self.agent_kwargs['actor_hidden'] if N is None else N
+        
+        self.initialize_place_fields(N)
+        self.add_pfs_targets(reset=True)
+
         losses = self.pfs.fit(epochs=epochs, scheduler_updates=scheduler_updates, progress=progress)
         if self.save_losses:
             self.pfs_losses = losses
         return losses
     
-    def initialize_place_fields(self, N=None):
-        gc_initialized = hasattr(self, 'grid_cells')
-        if not gc_initialized and N is None:
-            raise AttributeError("If grid cells have not been initialized, N should be specified manually")
-        
-        if gc_initialized:
-            targets = self.calc_pfs_targets()[:N]
-            N = len(targets)
-
+    def initialize_place_fields(self, N, env=None, state_dict=None):
         flanks = get_flanks(self.res + self.res // 10)
         self.pfs = PlaceFields(self.coords, flanks, N)
-        
-        if gc_initialized:
-            self.pfs.add_targets(targets)
+        self.pfs_per_env[self.current_env if env is None else env] = self.pfs
+        if state_dict is not None:
+            self.pfs.load_state_dict(state_dict)
+    
+    def add_pfs_targets(self, reset=False):
+        if not hasattr(self, 'grid_cells'):
+            raise AttributeError("Grid cells must be initialized to add targets")
+
+        self.pfs.add_targets(self.calc_pfs_targets()[:self.pfs.N])
+        if reset:
             self.pfs.informed_init()
+    
+    def load_pfs(self):
+        self.pfs = self.pfs_per_env[self.current_env]
+        self.add_pfs_targets()
     
     def calc_pfs_targets(self):
         return self.agent.actor.lin1(self.grid_cells).permute(-1, 0, 1).detach()
@@ -119,8 +128,7 @@ class Experiment:
     
     def save_pytorch(self, path, add_buffer):
         state_dicts = self.agent.collate_state_dicts(add_buffer)
-        if hasattr(self, 'pfs'):
-            state_dicts['pfs'] = self.pfs.state_dict()
+        state_dicts['pfs'] = {env: pfs.state_dict() for env, pfs in self.pfs_per_env.items()}
         torch.save(state_dicts, os.path.join(path, 'models.pt'))
     
     def save_metadata(self, path):
@@ -153,12 +161,13 @@ class Experiment:
             exp.pfs_losses = metadata['pfs_losses']
 
         state_dicts = torch.load(os.path.join(path, "models.pt"))
-        pfs_state_dict = state_dicts.pop('pfs', None)
+        pfs_state_dicts = state_dicts.pop('pfs', None)
         exp.agent.load_from_state_dicts(state_dicts)
 
-        if pfs_state_dict is not None:
-            exp.initialize_place_fields(N=pfs_state_dict['means'].shape[0])
-            exp.pfs.load_state_dict(pfs_state_dict)
+        if pfs_state_dicts is not None:
+            for env, state_dict in pfs_state_dicts.items():
+                N = state_dict['means'].shape[0]
+                exp.initialize_place_fields(N, env, state_dict)
         
         return exp
     
@@ -175,6 +184,9 @@ if __name__ == "__main__":
     exp.fit_positions(batches)
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
-    exp.save()
-
     print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03f}")
+    
+    exp.compile_grid_cells(2)
+    exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
+
+    exp.save()

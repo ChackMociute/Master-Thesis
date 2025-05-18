@@ -129,8 +129,9 @@ class GridCells:
         self.envs = dict()
     
     def reset_modules(self, env='random'):
-        # Initialize grid cell orientation in a new environment
+        # This ensures keys don't change after saving and loading with JSON
         env = str(env)
+        # Initialize grid cell orientation in a new environment
         if env not in self.envs.keys() or env == 'random':
             self.envs[env] = dict(
                 rotations=self.sample_rotations(),
