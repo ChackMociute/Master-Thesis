@@ -183,7 +183,7 @@ class GridCells:
             module.grid_cells *= peak
         if self.individual:
             module.grid_cells *= np.reshape(individual, (-1, 1, 1))
-        if self.heterogeneous:
+        if self.heterogeneous and self.envs[env]['masks'][i] is None:
             self.envs[env]['masks'][i] = module.mask.tolist()
 
     def compile_numpy(self):
