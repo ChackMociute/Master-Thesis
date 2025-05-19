@@ -26,6 +26,7 @@ class Experiment:
                  save_losses=True,
                  heterogeneous=False,
                  modular_peaks=False,
+                 individual=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -38,7 +39,8 @@ class Experiment:
         
         self.n_per_module = n_per_module
         self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution,
-                             heterogeneous=heterogeneous, modular_peaks=modular_peaks)
+                             heterogeneous=heterogeneous, modular_peaks=modular_peaks,
+                             individual=individual)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
         self.pfs_per_env = dict()
@@ -46,6 +48,7 @@ class Experiment:
 
         self.heterogeneous = heterogeneous
         self.modular_peaks = modular_peaks
+        self.individual = individual
 
         self.save_losses = save_losses
         self.pfs_losses = dict()
@@ -66,7 +69,8 @@ class Experiment:
             hidden_penalty=self.hidden_penalty,
             save_losses=self.save_losses, 
             heterogeneous = self.heterogeneous,
-            modular_peaks = self.modular_peaks
+            modular_peaks = self.modular_peaks,
+            individual = self.individual
         )
     
     def compile_grid_cells(self, env):

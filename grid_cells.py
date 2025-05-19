@@ -125,12 +125,14 @@ class GridCellModule:
 class GridCells:
     ROTATION_RANGE = (0, 121)
     
-    def __init__(self, scales, n_per_module=100, res=400, heterogeneous=False, modular_peaks=False):
+    def __init__(self, scales, n_per_module=100, res=400, heterogeneous=False, modular_peaks=False, individual=False):
         self.res = res
+        self.N = n_per_module
         radius = np.ceil(self.res * 0.9).astype(int)
         self.modules = [GridCellModule(scale, radius, n_per_module) for scale in scales]
         self.heterogeneous = heterogeneous
         self.modular_peaks = modular_peaks
+        self.individual = individual
         self.envs = dict()
     
     def reset_modules(self, env='random'):
@@ -142,19 +144,23 @@ class GridCells:
                 rotations=self.sample_rotations(),
                 displacements=self.sample_displacements(),
                 masks=[None] * len(self.modules),
-                peaks=np.random.uniform(0.5, 1.5, len(self.modules)).tolist()
+                peaks=self.sample_peaks(),
+                individuals=self.sample_individuals()
             )
         
         angles = self.envs[env]['rotations']
         shifts = self.envs[env]['displacements']
         masks = self.envs[env]['masks']
         peaks = self.envs[env]['peaks']
+        individuals = self.envs[env]['individuals']
 
-        zipped = enumerate(zip(self.modules, angles, shifts, masks, peaks))
-        for i, (module, angle, displacement, mask, peak) in zipped:
+        zipped = enumerate(zip(self.modules, angles, shifts, masks, peaks, individuals))
+        for i, (module, angle, displacement, mask, peak, individual) in zipped:
             module.reset_module(angle, displacement, heterogeneous=self.heterogeneous, mask=mask)
             if self.modular_peaks:
                 module.grid_cells *= peak
+            if self.individual:
+                module.grid_cells *= np.reshape(individual, (-1, 1, 1))
             if self.heterogeneous:
                 self.envs[env]['masks'][i] = module.mask.tolist()
     
@@ -166,6 +172,12 @@ class GridCells:
         # The maximum observed displacement is close to half the period
         periods = np.asarray([m.period for m in self.modules]) / 2
         return np.random.uniform(-periods, periods, (2, len(periods))).T.tolist()
+    
+    def sample_peaks(self):
+        return np.random.uniform(0.5, 1.5, len(self.modules)).tolist()
+    
+    def sample_individuals(self):
+        return np.random.uniform(0.5, 1.5, (len(self.modules), self.N)).tolist()
     
     def compile_numpy(self):
         self.grid_cells = np.concatenate([module.grid_cells for module in self.modules])
