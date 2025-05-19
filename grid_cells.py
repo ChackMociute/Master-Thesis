@@ -150,19 +150,11 @@ class GridCells:
         
         angles = self.envs[env]['rotations']
         shifts = self.envs[env]['displacements']
-        masks = self.envs[env]['masks']
-        peaks = self.envs[env]['peaks']
-        individuals = self.envs[env]['individuals']
 
-        zipped = enumerate(zip(self.modules, angles, shifts, masks, peaks, individuals))
-        for i, (module, angle, displacement, mask, peak, individual) in zipped:
+        zipped = enumerate(zip(self.modules, angles, shifts, *self.get_optionals(env)))
+        for i, (module, angle, displacement, mask, *optionals) in zipped:
             module.reset_module(angle, displacement, heterogeneous=self.heterogeneous, mask=mask)
-            if self.modular_peaks:
-                module.grid_cells *= peak
-            if self.individual:
-                module.grid_cells *= np.reshape(individual, (-1, 1, 1))
-            if self.heterogeneous:
-                self.envs[env]['masks'][i] = module.mask.tolist()
+            self.apply_optionals(env, module, i, *optionals)
     
     # Convert to list so JSON can dump it
     def sample_rotations(self):
@@ -179,6 +171,21 @@ class GridCells:
     def sample_individuals(self):
         return np.random.uniform(0.5, 1.5, (len(self.modules), self.N)).tolist()
     
+    def get_optionals(self, env):
+        nones = [None] * len(self.modules)
+        masks = self.envs[env]['masks'] if self.heterogeneous else nones
+        peaks = self.envs[env]['peaks'] if self.modular_peaks else nones
+        individuals = self.envs[env]['individuals'] if self.individual else nones
+        return masks, peaks, individuals
+    
+    def apply_optionals(self, env, module, i, peak, individual):
+        if self.modular_peaks:
+            module.grid_cells *= peak
+        if self.individual:
+            module.grid_cells *= np.reshape(individual, (-1, 1, 1))
+        if self.heterogeneous:
+            self.envs[env]['masks'][i] = module.mask.tolist()
+
     def compile_numpy(self):
         self.grid_cells = np.concatenate([module.grid_cells for module in self.modules])
         self.crop()
