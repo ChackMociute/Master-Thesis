@@ -73,6 +73,9 @@ class Experiment:
             individual = self.individual
         )
     
+    def rename(self, name):
+        self.name = name
+    
     def compile_grid_cells(self, env):
         self.current_env = env
         self.gcs.reset_modules(env)
@@ -191,6 +194,9 @@ if __name__ == "__main__":
     batches = kwargs.pop('batches')
     pf_epochs = kwargs.pop('pf_epochs')
     scheduler_updates = kwargs.pop('scheduler_updates')
+    train_env2 = kwargs.pop('train_env2')
+    batches_env2 = kwargs.pop('batches_env2')
+    batches_env2 = batches if batches_env2 is None else batches_env2
 
     exp = Experiment(**kwargs)
     exp.compile_grid_cells(1)
@@ -204,3 +210,9 @@ if __name__ == "__main__":
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
     exp.save()
+
+    if train_env2:
+        exp.rename(exp.name + '_env2')
+        exp.fit_positions(batches_env2)
+        exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
+        exp.save()
