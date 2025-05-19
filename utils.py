@@ -193,3 +193,11 @@ class PlaceFields(nn.Module):
         cov_inv = torch.diag_embed(self.cov_inv_diag.exp())
         cov_inv += torch.diag_embed(self.cov_inv_off_diag.tile(2)).flip(-1)
         return cov_inv
+    
+    def calc_fitness(self):
+        error = torch.pow(self.predict() - self.targets, 2).sum((1, 2))
+        variance = torch.pow(self.targets, 2).sum((1, 2))
+        return 1 - error / variance
+    
+    def place_cell_idx(self, threshold=0.5):
+        return np.arange(self.N)[self.calc_fitness() > threshold]
