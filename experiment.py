@@ -24,6 +24,8 @@ class Experiment:
                  wd_l2=0,
                  hidden_penalty=2e-2,
                  save_losses=True,
+                 heterogeneous=False,
+                 modular_peaks=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -35,11 +37,15 @@ class Experiment:
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
-        self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution)
+        self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution,
+                             heterogeneous=heterogeneous, modular_peaks=modular_peaks)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
         self.pfs_per_env = dict()
         self.current_env = None
+
+        self.heterogeneous = heterogeneous
+        self.modular_peaks = modular_peaks
 
         self.save_losses = save_losses
         self.pfs_losses = dict()
@@ -58,7 +64,9 @@ class Experiment:
             wd_l1=self.wd[0],
             wd_l2=self.wd[1],
             hidden_penalty=self.hidden_penalty,
-            save_losses=self.save_losses
+            save_losses=self.save_losses, 
+            heterogeneous = self.heterogeneous,
+            modular_peaks = self.modular_peaks
         )
     
     def compile_grid_cells(self, env):

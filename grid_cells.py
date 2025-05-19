@@ -12,23 +12,24 @@ class GridCellModule:
         self.radius = radius
         self.set_scale(scale)
         self.n = n_grid_cells
-        self.create_grid_cell()
     
     def set_scale(self, scale):
         # The field size is quadratically proportional to spacing
         self.scale = scale
         self.period = np.sqrt(scale) * 2 + scale / 3
     
-    def create_grid_cell(self):
+    def create_grid_cell(self, heterogeneous=False, mask=None):
         lines = self.lines_at_60()
         lines = [self.zeros_with_line(*line_aa(*l)) for l in lines]
 
         image = np.sum(lines, axis=0) > 1
         image = self.clean_image(image).astype(float)
-        # image *= np.random.uniform(0.5, 1.5, image.shape)
-        image = self.convolve(image, self.get_gaussian_kernel())
 
-        self.grid_cell = image / image.max()
+        if heterogeneous:
+            self.mask = np.random.uniform(0.5, 1.5, int(image.sum())) if mask is None else mask
+            image[image.astype(bool)] = self.mask
+        
+        self.grid_cell = self.convolve(image, self.get_gaussian_kernel())
     
     def lines_at_60(self):
         lines, length = list(), 0
@@ -84,6 +85,7 @@ class GridCellModule:
     
     @staticmethod
     def convolve(image, kernel):
+        kernel /= kernel.max()
         shape = np.asarray(kernel.shape) // 2 + image.shape
         conv = np.fft.rfft2(image, shape) * np.fft.rfft2(kernel, shape)
         conv = np.fft.irfft2(conv)
@@ -91,7 +93,8 @@ class GridCellModule:
         return conv[-image.shape[0]:, -image.shape[1]:]
     
     # Angle in degrees
-    def reset_module(self, rot_angle, displacement):
+    def reset_module(self, rot_angle, displacement, heterogeneous=False, mask=None):
+        self.create_grid_cell(heterogeneous=heterogeneous, mask=mask)
         gc = rotate(self.grid_cell, rot_angle, reshape=False)
         gcs = np.tile(gc, (self.n, 1, 1))
         self.grid_cells = self.add_phase(gcs, rot_angle, displacement)
@@ -122,10 +125,12 @@ class GridCellModule:
 class GridCells:
     ROTATION_RANGE = (0, 121)
     
-    def __init__(self, scales, n_per_module=100, res=400):
+    def __init__(self, scales, n_per_module=100, res=400, heterogeneous=False, modular_peaks=False):
         self.res = res
         radius = np.ceil(self.res * 0.9).astype(int)
         self.modules = [GridCellModule(scale, radius, n_per_module) for scale in scales]
+        self.heterogeneous = heterogeneous
+        self.modular_peaks = modular_peaks
         self.envs = dict()
     
     def reset_modules(self, env='random'):
@@ -135,14 +140,23 @@ class GridCells:
         if env not in self.envs.keys() or env == 'random':
             self.envs[env] = dict(
                 rotations=self.sample_rotations(),
-                displacements=self.sample_displacements()
+                displacements=self.sample_displacements(),
+                masks=[None] * len(self.modules),
+                peaks=np.random.uniform(0.5, 1.5, len(self.modules)).tolist()
             )
         
         angles = self.envs[env]['rotations']
         shifts = self.envs[env]['displacements']
+        masks = self.envs[env]['masks']
+        peaks = self.envs[env]['peaks']
 
-        for module, angle, displacement in zip(self.modules, angles, shifts):
-            module.reset_module(angle, displacement)
+        zipped = enumerate(zip(self.modules, angles, shifts, masks, peaks))
+        for i, (module, angle, displacement, mask, peak) in zipped:
+            module.reset_module(angle, displacement, heterogeneous=self.heterogeneous, mask=mask)
+            if self.modular_peaks:
+                module.grid_cells *= peak
+            if self.heterogeneous:
+                self.envs[env]['masks'][i] = module.mask.tolist()
     
     # Convert to list so JSON can dump it
     def sample_rotations(self):

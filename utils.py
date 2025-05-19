@@ -33,6 +33,8 @@ parser.add_argument('--wd_a', type=float, default=1e-5)
 parser.add_argument('--lr_c', type=float, default=5e-4)
 parser.add_argument('--wd_c', type=float, default=1e-5)
 parser.add_argument('--grad_norm', type=float, default=1e-1)
+parser.add_argument('--heterogeneous', action='store_true')
+parser.add_argument('--modular_peaks', action='store_true')
 
 
 def gaussian_grid(coords, gaussians):
