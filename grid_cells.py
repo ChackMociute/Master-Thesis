@@ -128,7 +128,7 @@ class GridCells:
     def __init__(self, scales, n_per_module=100, res=400, heterogeneous=False, modular_peaks=False, individual=False):
         self.res = res
         self.N = n_per_module
-        radius = np.ceil(self.res * 0.9).astype(int)
+        radius = np.ceil(self.res * 1.2).astype(int)
         self.modules = [GridCellModule(scale, radius, n_per_module) for scale in scales]
         self.heterogeneous = heterogeneous
         self.modular_peaks = modular_peaks
