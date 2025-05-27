@@ -36,7 +36,7 @@ class GridCellModule:
         while length < self.radius:
             shift = np.arcsin(length / self.radius)
             lines.extend(self.get_lines(shift, length==0))
-            length += self.period
+            length += self.period * np.sin(np.pi / 3)
         return np.asarray(lines) + self.radius
     
     def get_lines(self, shift, first):
