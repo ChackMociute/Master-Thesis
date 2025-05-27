@@ -16,8 +16,8 @@ class Experiment:
     def __init__(self, name,
                  resolution=400,
                  coord_bounds=(-1, 1),
-                 gc_scale_min=90,
-                 gc_scale_max=300,
+                 gc_scale_min=140,
+                 gc_scale_max=400,
                  n_modules=10,
                  n_per_module=100, # Must be a square number (4, 9, 16, ...)
                  wd_l1=0,
