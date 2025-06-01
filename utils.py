@@ -71,7 +71,7 @@ def eval_position(agent, coords, grid_cells, size=4096):
     for _ in range(size // 256):
         x, y = get_loc_batch(coords, grid_cells, bs=256)
         x = agent.actor(x)[1]
-        loss = torch.sum((x - y)**2).detach().cpu().numpy()
+        loss = torch.mean((x - y)**2).detach().cpu().numpy()
         losses.append(loss)
     return np.mean(losses)
 
@@ -202,4 +202,4 @@ class PlaceFields(nn.Module):
         return 1 - error / variance
     
     def place_cell_idx(self, threshold=0.5):
-        return np.arange(self.N)[self.calc_fitness() > threshold]
+        return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
