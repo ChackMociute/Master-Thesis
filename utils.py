@@ -197,9 +197,17 @@ class PlaceFields(nn.Module):
         return cov_inv
     
     def calc_fitness(self):
+        if not hasattr(self, 'targets'):
+            raise AttributeError("Targets must be added before fitness can be calculated")
         error = torch.pow(self.predict() - self.targets, 2).sum((1, 2))
         variance = torch.pow(self.targets, 2).sum((1, 2))
         return 1 - error / variance
     
-    def place_cell_idx(self, threshold=0.5):
+    def get_place_cells(self, threshold=0.5):
         return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
+
+    def get_active_cells(self, threshold=0.001):
+        return torch.arange(self.N, device=device)[self.scales.squeeze() >= threshold]
+    
+    def pairwise_distances(self, pairs):
+        return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
