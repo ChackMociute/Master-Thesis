@@ -7,11 +7,12 @@ from utils import gaussian_grid
 
 
 class GridCellModule:
-    def __init__(self, scale, radius, n_grid_cells):
+    def __init__(self, scale, radius, n_grid_cells, res=400):
         assert np.sqrt(n_grid_cells) % 1 == 0, "Number of grid cells should be a square"
         self.radius = radius
         self.set_scale(scale)
         self.n = n_grid_cells
+        self.res = res
     
     def set_scale(self, scale):
         # The field size is quadratically proportional to spacing
@@ -98,6 +99,12 @@ class GridCellModule:
         gc = rotate(self.grid_cell, rot_angle, reshape=False)
         gcs = np.tile(gc, (self.n, 1, 1))
         self.grid_cells = self.add_phase(gcs, rot_angle, displacement)
+        self.crop()
+    
+    def crop(self):
+        x, y = self.grid_cells.shape[1:]
+        x, y = (x - self.res) // 2, (y - self.res) // 2
+        self.grid_cells = self.grid_cells[:, x:x + self.res, y:y + self.res]
     
     def add_phase(self, grid_cells, rot_angle, displacement):
         p = np.linspace(-self.period / 2, self.period / 2, int(np.sqrt(self.n)))
@@ -129,7 +136,7 @@ class GridCells:
         self.res = res
         self.N = n_per_module
         radius = np.ceil(self.res * 1.2).astype(int)
-        self.modules = [GridCellModule(scale, radius, n_per_module) for scale in scales]
+        self.modules = [GridCellModule(scale, radius, n_per_module, res=res) for scale in scales]
         self.heterogeneous = heterogeneous
         self.modular_peaks = modular_peaks
         self.individual = individual
@@ -186,9 +193,9 @@ class GridCells:
         if self.heterogeneous and self.envs[env]['masks'][i] is None:
             self.envs[env]['masks'][i] = module.mask.tolist()
 
-    def compile_numpy(self):
+    def compile_numpy(self, crop=False):
         self.grid_cells = np.concatenate([module.grid_cells for module in self.modules])
-        self.crop()
+        if crop: self.crop()
         self.shape = self.grid_cells.shape
     
     def crop(self):
