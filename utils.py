@@ -207,7 +207,7 @@ class PlaceFields(nn.Module):
         return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
 
     def get_active_cells(self, threshold=0.001):
-        return torch.arange(self.N, device=device)[self.scales.squeeze() >= threshold]
+        return torch.arange(self.N, device=device)[self.scales.squeeze().pow(2) >= threshold]
     
     def pairwise_distances(self, pairs):
         return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
