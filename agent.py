@@ -50,15 +50,15 @@ class Actor(nn.Module):
     # A separate method for reguralization allows combining different
     # regularization terms for different parts of the network
     def regularization_loss(self, l1, l2):
-        l1_loss = self.w1.abs().sum()
-        l2_loss = torch.pow(self.w1, 2).sum()
-        l2_loss += torch.pow(self.b1, 2).sum()
-        l2_loss += torch.pow(self.lin2.weight, 2).sum()
-        l2_loss += torch.pow(self.lin2.bias, 2).sum()
+        l1_loss = self.w1.abs().mean()
+        l2_loss = self.w1.pow(2).mean()
+        l2_loss += self.b1.pow(2).mean()
+        l2_loss += self.lin2.weight.pow(2).mean()
+        l2_loss += self.lin2.bias.pow(2).mean()
         return l1 * l1_loss + l2 * l2_loss
     
     def hidden_loss(self, weight):
-        return torch.sum(self.hidden, dim=-1).mean() * weight
+        return self.hidden.sum(dim=-1).mean() * weight
 
 
 class Agent:
@@ -140,3 +140,24 @@ class Agent:
         self.optim_actor.step()
         
         self.update_target_networks()
+    
+    def collate_state_dicts(self, add_buffer=False):
+        state_dicts = dict(
+            actor=self.actor.state_dict(),
+            critic=self.critic.state_dict(),
+            target_actor=self.target_actor.state_dict(),
+            target_critic=self.target_critic.state_dict(),
+            optim_actor=self.optim_actor.state_dict(),
+            optim_critic=self.optim_critic.state_dict()
+        )
+        
+        if add_buffer:
+            state_dicts['buffer'] = self.buffer
+        
+        return state_dicts
+    
+    def load_from_state_dicts(self, state_dicts):
+        if 'buffer' in state_dicts.keys():
+            self.buffer = state_dicts.pop('buffer')
+        for k, v in state_dicts.items():
+            getattr(self, k).load_state_dict(v)

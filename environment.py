@@ -16,45 +16,6 @@ class Environment(ABC):
         ...
 
 
-class GridWorld(Environment):
-    VELOCITIES = [-1, 0, 1]
-    
-    def __init__(self, x, y):
-        assert x >= 2 and y >= 2, f"GridWorld must be at least 2x2, got {x}x{y}"
-        assert isinstance(x, int) and isinstance(y, int), f"Dimensions must be integers, got type(x)={type(x)} and type(y)={type(y)}"
-        self.states = np.arange(x*y).reshape(x, y)
-        self.reset()
-    
-    def reset(self):
-        self.state = np.random.choice(self.states.flatten())
-    
-    def next_state(self):
-        x, y = np.where(self.states == self.state)
-        vx, vy = self.possible_velocity(x.item(), y.item())
-        x += vx
-        y += vy
-        self.state = self.states[x, y].item()
-    
-    def possible_velocity(self, x, y):
-        vx = choice(self.VELOCITIES[int(x == 0):-1 if x == self.states.shape[0] - 1 else len(self.VELOCITIES)])
-        vy = choice(self.VELOCITIES[int(y == 0):-1 if y == self.states.shape[1] - 1 else len(self.VELOCITIES)])
-        return vx, vy
-
-
-class ToroidalGridWorld(GridWorld):
-    def next_state(self):
-        old = self.state
-        x, y = np.where(self.states == old)
-        vx, vy = self.possible_velocity()
-        x = (x + vx) % self.states.shape[0]
-        y = (y + vy) % self.states.shape[1]
-        self.state = self.states[x, y].item()
-        return old, vx, vy, self.state
-    
-    def possible_velocity(self):
-        return choice(self.VELOCITIES), choice(self.VELOCITIES)
-
-
 class GridCellWorld(Environment):
     def __init__(self, grid_cells, coords, max_velocity=None, debug=False):
         self.grid_cells = grid_cells
