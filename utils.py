@@ -178,7 +178,10 @@ class PlaceFields(nn.Module):
     def forward(self):
         # High flank loss ensures that the Gaussian does not drift beyond the range
         # of the coordinates (at the cost of introducing some bias around the edges)
-        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        flank_loss = self.calc_gaussian(self.flanks)
+        smoothing = torch.exp(50 * (self.flanks.abs().max(1).values.unsqueeze(0) - 1.07))
+        # Smoothing increases flank loss exponentially from the boundary
+        flank_loss = (flank_loss * smoothing).sum() * 3
         pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
         return pred_loss + flank_loss
     
