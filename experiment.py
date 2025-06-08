@@ -25,8 +25,6 @@ class Experiment:
                  hidden_penalty=2e-2,
                  save_losses=True,
                  heterogeneous=False,
-                 modular_peaks=False,
-                 individual=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -38,17 +36,14 @@ class Experiment:
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
-        self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution,
-                             heterogeneous=heterogeneous, modular_peaks=modular_peaks,
-                             individual=individual)
+        self.gcs = GridCells(self.scales, n_per_module=n_per_module,
+                             res=resolution, heterogeneous=heterogeneous)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
         self.pfs_per_env = dict()
         self.current_env = None
 
         self.heterogeneous = heterogeneous
-        self.modular_peaks = modular_peaks
-        self.individual = individual
 
         self.save_losses = save_losses
         self.pfs_losses = dict()
@@ -68,9 +63,7 @@ class Experiment:
             wd_l2=self.wd[1],
             hidden_penalty=self.hidden_penalty,
             save_losses=self.save_losses, 
-            heterogeneous = self.heterogeneous,
-            modular_peaks = self.modular_peaks,
-            individual = self.individual
+            heterogeneous = self.heterogeneous
         )
     
     def rename(self, name):
@@ -79,8 +72,7 @@ class Experiment:
     def compile_grid_cells(self, env):
         self.current_env = env
         self.gcs.reset_modules(env)
-        self.gcs.compile_numpy()
-        self.grid_cells = to_tensor(self.gcs.grid_cells.transpose(1, 2, 0))
+        self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
     
     def fit_positions(self, batches=50000, bs=256, progress=True):
         losses = [self.fit_position_batch(*get_loc_batch(self.coords, self.grid_cells, bs=bs))
@@ -190,6 +182,8 @@ class Experiment:
     
 
 if __name__ == "__main__":
+    from analysis import Analysis
+    
     kwargs = vars(parser.parse_args())
     batches = kwargs.pop('batches')
     pf_epochs = kwargs.pop('pf_epochs')
@@ -209,7 +203,11 @@ if __name__ == "__main__":
     exp.compile_grid_cells(2)
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
+    anl = Analysis(exp, initialized_pc=True)
+    anl.collect_stats()
+
     exp.save()
+    anl.save_stats(os.path.join('data', exp.name))
 
     if train_env2:
         exp.rename(exp.name + '_env2')
