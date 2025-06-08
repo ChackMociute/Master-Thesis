@@ -16,8 +16,8 @@ parser.add_argument('--pf_epochs', type=int, default=3000)
 parser.add_argument('--scheduler_updates', type=int, default=6)
 parser.add_argument('--n_modules', type=int, default=10)
 parser.add_argument('--n_per_module', type=int, default=100, help="Must be a square (4, 9, 16, ...)")
-parser.add_argument('--gc_scale_min', type=int, default=90)
-parser.add_argument('--gc_scale_max', type=int, default=300)
+parser.add_argument('--gc_scale_min', type=int, default=120)
+parser.add_argument('--gc_scale_max', type=int, default=400)
 parser.add_argument('--wd_l1', type=float, default=5e-3)
 parser.add_argument('--wd_l2', type=float, default=5e-5)
 parser.add_argument('--hidden_penalty', type=float, default=2e-2)
@@ -51,7 +51,7 @@ def get_coords(resolution, MIN=-1, MAX=1):
     return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
 
 # Only works for square coordinates centered around 0
-def get_flanks(res, reach=1, bounds=1.1):
+def get_flanks(res, reach=1, bounds=1.3):
     flanks = torch.linspace(-bounds, bounds, res, device=device)
     flanks = torch.meshgrid(flanks, flanks, indexing='xy')
     flanks = torch.stack(flanks).view(2, -1).T
@@ -71,7 +71,7 @@ def eval_position(agent, coords, grid_cells, size=4096):
     for _ in range(size // 256):
         x, y = get_loc_batch(coords, grid_cells, bs=256)
         x = agent.actor(x)[1]
-        loss = torch.sum((x - y)**2).detach().cpu().numpy()
+        loss = torch.mean((x - y)**2).detach().cpu().numpy()
         losses.append(loss)
     return np.mean(losses)
 
@@ -174,10 +174,14 @@ class PlaceFields(nn.Module):
         
         return losses
 
-    def forward(self):
+    # Smoothing constants a and b paramterize the rate of exponential growth
+    def forward(self, sa=27, sb=1.15):
         # High flank loss ensures that the Gaussian does not drift beyond the range
         # of the coordinates (at the cost of introducing some bias around the edges)
-        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        flank_loss = self.calc_gaussian(self.flanks)
+        smoothing = torch.exp(sa * (self.flanks.abs().max(1).values.unsqueeze(0) - sb))
+        # Smoothing increases flank loss exponentially from the boundary
+        flank_loss = (flank_loss * smoothing).sum() * 5
         pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
         return pred_loss + flank_loss
     
@@ -197,9 +201,23 @@ class PlaceFields(nn.Module):
         return cov_inv
     
     def calc_fitness(self):
+        if not hasattr(self, 'targets'):
+            raise AttributeError("Targets must be added before fitness can be calculated")
         error = torch.pow(self.predict() - self.targets, 2).sum((1, 2))
         variance = torch.pow(self.targets, 2).sum((1, 2))
         return 1 - error / variance
     
-    def place_cell_idx(self, threshold=0.5):
-        return np.arange(self.N)[self.calc_fitness() > threshold]
+    def get_place_cells(self, threshold=0.5):
+        return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
+
+    def get_active_cells(self, threshold=0.001):
+        return torch.arange(self.N, device=device)[self.scales.squeeze().pow(2) >= threshold]
+    
+    def pairwise_distances(self, pairs):
+        return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
+    
+    def get_coverage(self, p=0.99):
+        diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        dist = (diff * (diff @ self.get_cov_inv())).sum(-1)
+        dist = dist.view(self.N, *self.coords.shape[:-1])
+        return dist.sqrt() < 3 # Corresponds to the equivalent of ~99% probability mass

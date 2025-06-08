@@ -16,8 +16,8 @@ class Experiment:
     def __init__(self, name,
                  resolution=400,
                  coord_bounds=(-1, 1),
-                 gc_scale_min=90,
-                 gc_scale_max=300,
+                 gc_scale_min=140,
+                 gc_scale_max=400,
                  n_modules=10,
                  n_per_module=100, # Must be a square number (4, 9, 16, ...)
                  wd_l1=0,
@@ -115,7 +115,7 @@ class Experiment:
         return losses
     
     def initialize_place_fields(self, N, env=None, state_dict=None):
-        flanks = get_flanks(self.res + self.res // 10)
+        flanks = get_flanks(self.res // 6 + self.res // 30)
         self.pfs = PlaceFields(self.coords, flanks, N)
         self.pfs_per_env[self.current_env if env is None else env] = self.pfs
         if state_dict is not None:
@@ -190,6 +190,8 @@ class Experiment:
     
 
 if __name__ == "__main__":
+    from analysis import Analysis
+    
     kwargs = vars(parser.parse_args())
     batches = kwargs.pop('batches')
     pf_epochs = kwargs.pop('pf_epochs')
@@ -209,7 +211,11 @@ if __name__ == "__main__":
     exp.compile_grid_cells(2)
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
+    anl = Analysis(exp, initialized_pc=True)
+    anl.collect_stats()
+
     exp.save()
+    anl.save_stats(os.path.join('data', exp.name))
 
     if train_env2:
         exp.rename(exp.name + '_env2')
