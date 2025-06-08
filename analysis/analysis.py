@@ -22,17 +22,22 @@ save_path = "../figs"
 
 
 class Analysis:
-    def __init__(self, exp, immediate_pc=False):
+    def __init__(self, exp, immediate_pc=False, initialized_pc=False):
         self.exp = exp
         self.find_active_cells()
-        if immediate_pc:
-            self.find_place_cells()
+        if immediate_pc or initialized_pc:
+            self.find_place_cells(initialized=initialized_pc)
     
     def find_active_cells(self):
         self.active_per_env = {env: set(pfs.get_active_cells().cpu().numpy())
                                for env, pfs in self.exp.pfs_per_env.items()}
     
-    def find_place_cells(self):
+    def find_place_cells(self, initialized=False):
+        if initialized:
+            self.place_cells_per_env = {env: set(pfs.get_place_cells().cpu().numpy())
+                                        for env, pfs in self.exp.pfs_per_env.items()}
+            return
+        
         self.place_cells_per_env = dict()
         for env in self.exp.pfs_per_env.keys():
             self.exp.compile_grid_cells(env)
@@ -49,7 +54,9 @@ class Analysis:
         stats = dict()
         act_train = self.active_per_env[train_env]
         for env, active in self.active_per_env.items():
-            stats[(env, 'proportion')] = len(active) / self.exp.pfs.N
+            pfs = self.exp.pfs_per_env[env]
+            stats[(env, 'proportion')] = len(active) / pfs.N
+            stats[(env, 'coverage')] = torch.sum(pfs.targets.sum(0) > 1e-3).item() / self.exp.res**2
             if train_env != env:
                 stats[(env, 'intersection')] = len(act_train.intersection(active))
                 stats[(env, 'union')] = len(act_train.union(active))
@@ -61,7 +68,12 @@ class Analysis:
         stats = dict()
         pc_train = self.active_per_env[train_env]
         for env, pc in self.place_cells_per_env.items():
-            stats[(env, 'proportion')] = len(pc) / self.exp.pfs.N
+            pfs = self.exp.pfs_per_env[env]
+            coverage = pfs.get_coverage()
+            stats[(env, 'proportion')] = len(pc) / pfs.N
+            stats[(env, 'scales')] = pfs.scales[list(pc)].mean().item()
+            stats[(env, 'sizes')] = torch.mean(coverage[list(pc)].sum((-2, -1)) / self.exp.res**2).item()
+            stats[(env, 'coverage')] = coverage[list(pc)].any(0).sum().item() / self.exp.res**2
             if train_env != env:
                 stats[(env, 'intersection')] = len(pc_train.intersection(pc))
                 stats[(env, 'union')] = len(pc_train.union(pc))
@@ -115,6 +127,15 @@ class Analysis:
     def check_and_initialize_stats(self, train_env):
         if not hasattr(self, 'stats'):
             self.collect_stats(train_env=train_env)
+    
+    def save_stats(self, path):
+        pd.DataFrame(self.stats).to_json(os.path.join(path, "stats.json"))
+    
+    @staticmethod
+    def load_stats(filename):
+        df = pd.read_json(filename)
+        df.index = pd.MultiIndex.from_tuples(df.index.map(eval))
+        return df
 
 
 class MultiAnalysis:

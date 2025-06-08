@@ -5,7 +5,6 @@ import numpy as np
 from argparse import ArgumentParser
 from torch.optim import RMSprop
 from torch.optim.lr_scheduler import ExponentialLR
-from scipy.stats import norm
 from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
@@ -221,4 +220,4 @@ class PlaceFields(nn.Module):
         diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
         dist = (diff * (diff @ self.get_cov_inv())).sum(-1)
         dist = dist.view(self.N, *self.coords.shape[:-1])
-        return dist.sqrt() < norm.ppf(p)
+        return dist.sqrt() < 3 # Corresponds to the equivalent of ~99% probability mass
