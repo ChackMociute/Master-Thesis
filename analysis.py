@@ -1,14 +1,11 @@
 import os
-import sys
+# import sys
 import torch
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 plt.style.use('tableau-colorblind10')
 
-module_path = os.path.abspath(os.path.join('..'))
-if module_path not in sys.path:
-    sys.path.append(module_path)
 
 from experiment import Experiment
 from itertools import product
@@ -16,8 +13,7 @@ from scipy.stats import pearsonr
 from tqdm import tqdm
 
 
-data_path = "../data"
-save_path = "../figs"
+data_path = "data"
 
 
 

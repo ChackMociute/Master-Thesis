@@ -6,7 +6,6 @@ import numpy as np
 from agent import Agent
 from grid_cells import GridCells
 from tqdm import tqdm
-from analysis import Analysis
 from utils import (PlaceFields, to_tensor,
                    get_coords, get_flanks,
                    get_loc_batch, eval_position,
@@ -191,6 +190,8 @@ class Experiment:
     
 
 if __name__ == "__main__":
+    from analysis import Analysis
+    
     kwargs = vars(parser.parse_args())
     batches = kwargs.pop('batches')
     pf_epochs = kwargs.pop('pf_epochs')
