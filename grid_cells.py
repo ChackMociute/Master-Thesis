@@ -27,6 +27,7 @@ class GridCellModule:
 
         image = torch.stack(lines).sum(0) > 1
         image = self.clean_image(image).to(torch.float32)
+        image = image.tile((self.n, 1, 1))
 
         if heterogeneous:
             idx = image.to(bool)
@@ -34,7 +35,8 @@ class GridCellModule:
             self.mask = mask.clip(0.1) if mask is None else mask
             image[idx] *= self.mask
         
-        self.grid_cell = self.convolve(image, self.get_gaussian_kernel())
+        kernel = self.get_gaussian_kernel().reshape(1, self.scale, self.scale)
+        self.grid_cells = self.convolve(image, kernel)
     
     def lines_at_60(self):
         lines, length = list(), 0
@@ -92,28 +94,28 @@ class GridCellModule:
     @staticmethod
     def convolve(image, kernel):
         kernel /= kernel.max()
-        shape = tuple(np.asarray(kernel.shape) // 2 + image.shape)
-        conv = torch.fft.rfft2(image, shape) * torch.fft.rfft2(kernel, shape)
-        conv = torch.fft.irfft2(conv)
+        shape = (image.shape[0], *(np.asarray(kernel.shape[1:]) // 2 + image.shape[1:]))
+        conv = torch.fft.rfftn(image, shape) * torch.fft.rfftn(kernel, shape)
+        conv = torch.fft.irfftn(conv)
         conv = torch.where(torch.isclose(conv, torch.zeros_like(conv), atol=1e-4), 0, conv) # remove noise
-        return conv[-image.shape[0]:, -image.shape[1]:]
+        return conv[:,-image.shape[1]:, -image.shape[2]:]
     
     # Angle in degrees
     def reset_module(self, rot_angle, displacement, heterogeneous=False, mask=None):
         self.create_grid_cell(heterogeneous=heterogeneous, mask=mask)
-        # gc = rotate(self.grid_cell.unsqueeze(0), rot_angle, expand=False)
-        gcs = self.grid_cell.tile((self.n, 1, 1))
-        self.grid_cells = self.add_phase(gcs, rot_angle, displacement)
+        self.rotate_and_add_phase(rot_angle, displacement)
         self.crop()
     
-    def add_phase(self, grid_cells, rot_angle, displacement):
+    def rotate_and_add_phase(self, rot_angle, displacement):
         p = torch.linspace(-self.period / 2, self.period / 2, int(np.sqrt(self.n)), device=device)
         phases = torch.stack(torch.meshgrid(p, p, indexing='xy')).view(2, -1).T + to_tensor(displacement)
+
         shear = self.shear2d(np.pi / 6).T
         rot = self.rot2d(rot_angle / 180 * np.pi).T
+        
         phases = phases @ shear @ rot
-        return torch.concat([affine(gc.unsqueeze(0), -rot_angle, phase, 1, 0)
-                             for gc, phase in zip(grid_cells, phases.tolist())])
+        self.grid_cells =  torch.concat([affine(gc.unsqueeze(0), -rot_angle, phase, 1, 0)
+                                         for gc, phase in zip(self.grid_cells, phases.tolist())])
     
     @staticmethod
     def rot2d(angle):
@@ -185,7 +187,6 @@ class GridCells:
     def clear_modules(self):
         for m in self.modules:
             del m.grid_cells
-            del m.grid_cell
         torch.cuda.empty_cache()
     
     def __getitem__(self, i):

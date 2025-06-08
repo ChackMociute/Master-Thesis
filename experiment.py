@@ -77,7 +77,6 @@ class Experiment:
     def compile_grid_cells(self, env):
         self.current_env = env
         self.gcs.reset_modules(env)
-        self.gcs.compile_numpy()
         self.grid_cells = to_tensor(self.gcs.grid_cells.transpose(1, 2, 0))
     
     def fit_positions(self, batches=50000, bs=256, progress=True):
