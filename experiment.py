@@ -25,8 +25,6 @@ class Experiment:
                  hidden_penalty=2e-2,
                  save_losses=True,
                  heterogeneous=False,
-                 modular_peaks=False,
-                 individual=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -38,17 +36,14 @@ class Experiment:
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
-        self.gcs = GridCells(self.scales, n_per_module=n_per_module, res=resolution,
-                             heterogeneous=heterogeneous, modular_peaks=modular_peaks,
-                             individual=individual)
+        self.gcs = GridCells(self.scales, n_per_module=n_per_module,
+                             res=resolution, heterogeneous=heterogeneous)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
         self.pfs_per_env = dict()
         self.current_env = None
 
         self.heterogeneous = heterogeneous
-        self.modular_peaks = modular_peaks
-        self.individual = individual
 
         self.save_losses = save_losses
         self.pfs_losses = dict()
