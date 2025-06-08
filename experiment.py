@@ -72,7 +72,7 @@ class Experiment:
     def compile_grid_cells(self, env):
         self.current_env = env
         self.gcs.reset_modules(env)
-        self.grid_cells = to_tensor(self.gcs.grid_cells.transpose(1, 2, 0))
+        self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
     
     def fit_positions(self, batches=50000, bs=256, progress=True):
         losses = [self.fit_position_batch(*get_loc_batch(self.coords, self.grid_cells, bs=bs))
