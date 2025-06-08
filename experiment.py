@@ -68,9 +68,7 @@ class Experiment:
             wd_l2=self.wd[1],
             hidden_penalty=self.hidden_penalty,
             save_losses=self.save_losses, 
-            heterogeneous = self.heterogeneous,
-            modular_peaks = self.modular_peaks,
-            individual = self.individual
+            heterogeneous = self.heterogeneous
         )
     
     def rename(self, name):
