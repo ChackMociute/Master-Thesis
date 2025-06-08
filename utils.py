@@ -52,7 +52,7 @@ def get_coords(resolution, MIN=-1, MAX=1):
     return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
 
 # Only works for square coordinates centered around 0
-def get_flanks(res, reach=1, bounds=1.1):
+def get_flanks(res, reach=1, bounds=1.3):
     flanks = torch.linspace(-bounds, bounds, res, device=device)
     flanks = torch.meshgrid(flanks, flanks, indexing='xy')
     flanks = torch.stack(flanks).view(2, -1).T
@@ -175,13 +175,14 @@ class PlaceFields(nn.Module):
         
         return losses
 
-    def forward(self):
+    # Smoothing constants a and b paramterize the rate of exponential growth
+    def forward(self, sa=27, sb=1.15):
         # High flank loss ensures that the Gaussian does not drift beyond the range
         # of the coordinates (at the cost of introducing some bias around the edges)
         flank_loss = self.calc_gaussian(self.flanks)
-        smoothing = torch.exp(50 * (self.flanks.abs().max(1).values.unsqueeze(0) - 1.07))
+        smoothing = torch.exp(sa * (self.flanks.abs().max(1).values.unsqueeze(0) - sb))
         # Smoothing increases flank loss exponentially from the boundary
-        flank_loss = (flank_loss * smoothing).sum() * 3
+        flank_loss = (flank_loss * smoothing).sum() * 5
         pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
         return pred_loss + flank_loss
     
