@@ -49,11 +49,11 @@ class Analysis:
         stats = dict()
         act_train = self.active_per_env[train_env]
         for env, active in self.active_per_env.items():
-            stats[(env, 'length')] = len(active)
+            stats[(env, 'proportion')] = len(active) / self.exp.pfs.N
             if train_env != env:
                 stats[(env, 'intersection')] = len(act_train.intersection(active))
-                stats[(env, 'union')] = len(act_train.intersection(active))
-                stats[(env, 'IoU')] = len(act_train.intersection(active)) / len(act_train.intersection(active))
+                stats[(env, 'union')] = len(act_train.union(active))
+                stats[(env, 'IoU')] = len(act_train.intersection(active)) / len(act_train.union(active))
                 stats[(env, 'turnover')] = self.get_turnover(train_env, env, all_active=True)
         return stats
 
@@ -61,11 +61,11 @@ class Analysis:
         stats = dict()
         pc_train = self.active_per_env[train_env]
         for env, pc in self.place_cells_per_env.items():
-            stats[(env, 'length')] = len(pc)
+            stats[(env, 'proportion')] = len(pc) / self.exp.pfs.N
             if train_env != env:
                 stats[(env, 'intersection')] = len(pc_train.intersection(pc))
-                stats[(env, 'union')] = len(pc_train.intersection(pc))
-                stats[(env, 'IoU')] = len(pc_train.intersection(pc)) / len(pc_train.intersection(pc))
+                stats[(env, 'union')] = len(pc_train.union(pc))
+                stats[(env, 'IoU')] = len(pc_train.intersection(pc)) / len(pc_train.union(pc))
                 stats[(env, 'turnover')] = self.get_turnover(train_env, env)
                 stats[(env, 'remapping')] = self.get_remapping(train_env, env)
         return stats
@@ -96,32 +96,44 @@ class Analysis:
         
         return 1 - (rmsd(alpha, beta) / rmsd(alpha_0, beta))
     
-    def place_cell_stats(self, env1=1, env2=2):
-        pc1, pc2 = self.place_cells_per_env[env1], self.place_cells_per_env[env2]
-
-        print("Len env1:", len(pc1))
-        print("Len env2:", len(pc2))
-        print("Intersection:", len(pc1.intersection(pc2)))
-        print("Union:", len(pc1.union(pc2)))
-        print("Remapping:", self.get_remapping(env1, env2))
-        print("Turnover:", self.get_turnover(env1, env2))
-    
-    def active_cell_stats(self):
-        act1, act2 = self.active_per_env.values()
+    def place_cell_stats(self, train_env=1):
+        self.check_and_initialize_stats(train_env)
+        
         print(self.exp.name + ':')
-        print('Len env1:', len(act1), '| Len env2:', len(act2))
-        print("Intersection:", len(act1.intersection(act2)))
-        print("Union:", len(act1.union(act2)))
-        print("IoU:", len(act1.intersection(act2)) / len(act1.union(act2)))
-        print("Turnover:", self.get_turnover(1, 2, all_active=True))
+        for (env, k), v in self.stats['place'].items():
+            print(f"Env '{env}' {k}: {v:.03f}")
         print()
+    
+    def active_cell_stats(self, train_env=1):
+        self.check_and_initialize_stats(train_env)
+        
+        print(self.exp.name + ':')
+        for (env, k), v in self.stats['active'].items():
+            print(f"Env '{env}' {k}: {v:.03f}")
+        print()
+    
+    def check_and_initialize_stats(self, train_env):
+        if not hasattr(self, 'stats'):
+            self.collect_stats(train_env=train_env)
 
 
-def active_cells(exp_names):
-    for name in exp_names:
-        exp = Experiment.load_experiment(data_path, name)
-        anl = Analysis(exp)
-        anl.active_cell_stats()
+class MultiAnalysis:
+    def __init__(self, data_path, exp_names, immediate_pc=False):
+        self.exps = [Experiment.load_experiment(data_path, name) for name in exp_names]
+        self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
+    
+    def print_active_cells(self):
+        for anl in self.anls:
+            anl.active_cell_stats()
+    
+    def print_place_cells(self):
+        for anl in self.anls:
+            anl.place_cell_stats()
+        
+    def get_df(self):
+        return pd.DataFrame({(anl.exp.name, units): values
+                             for anl in self.anls
+                             for units, values in anl.stats.items()})
 
 
 def get_cell_data(exps):
