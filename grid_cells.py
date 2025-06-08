@@ -9,11 +9,11 @@ from utils import gaussian_grid, device, to_tensor
 
 
 class GridCellModule:
-    def __init__(self, scale, radius, n_grid_cells, res=400):
+    def __init__(self, scale, n_grid_cells, res=400):
         assert np.sqrt(n_grid_cells) % 1 == 0, "Number of grid cells should be a square"
-        self.radius = radius
         self.set_scale(scale)
         self.n = n_grid_cells
+        self.radius = int(res / 2 + 1.5 * self.period)
         self.res = res
     
     def set_scale(self, scale):
@@ -30,7 +30,7 @@ class GridCellModule:
 
         if heterogeneous:
             idx = image.to(bool)
-            mask = torch.randn(idx.sum(), device=device, dtype=torch.half) / 3 + 1
+            mask = torch.randn(idx.sum(), device=device) / 3 + 1
             self.mask = mask.clip(0.1) if mask is None else mask
             image[idx] *= self.mask
         
@@ -86,7 +86,8 @@ class GridCellModule:
     def get_gaussian_kernel(self):
         range_ = np.linspace(-5, 5, self.scale)
         coords = np.stack(np.meshgrid(range_, range_)).transpose(1, 2, 0)
-        return torch.tensor(gaussian_grid(coords, [multivariate_normal([0, 0])]), device=device, dtype=torch.float64)
+        return torch.tensor(gaussian_grid(coords, [multivariate_normal([0, 0])]),
+                            device=device, dtype=torch.float32)
     
     @staticmethod
     def convolve(image, kernel):
@@ -140,8 +141,7 @@ class GridCells:
     def __init__(self, scales, n_per_module=100, res=400, heterogeneous=False):
         self.res = res
         self.N = n_per_module
-        radius = np.ceil(self.res * 1.2).astype(int)
-        self.modules = [GridCellModule(scale, radius, n_per_module, res=res) for scale in scales]
+        self.modules = [GridCellModule(scale, n_per_module, res=res) for scale in scales]
         self.heterogeneous = heterogeneous
         self.envs = dict()
     
@@ -164,6 +164,9 @@ class GridCells:
             module.reset_module(angle, displacement, heterogeneous=self.heterogeneous, mask=mask)
             if self.heterogeneous and self.envs[env]['masks'][i] is None:
                 self.envs[env]['masks'][i] = module.mask.tolist()
+        
+        self.compile_cells()
+        self.clear_modules()
     
     # Convert to list so JSON can dump it
     def sample_rotations(self):
@@ -174,19 +177,20 @@ class GridCells:
         periods = np.asarray([m.period for m in self.modules]) / 2
         return np.random.uniform(-periods, periods, (2, len(periods))).T.tolist()
 
-    def compile_numpy(self, crop=False):
+    def compile_cells(self):
         self.grid_cells = torch.concat([module.grid_cells for module in self.modules])
-        if crop: self.crop()
+        # self.grid_cells = self.grid_cells.to(torch.float16)
         self.shape = self.grid_cells.shape
     
-    def crop(self):
-        x, y = self.grid_cells.shape[1:]
-        x, y = (x - self.res) // 2, (y - self.res) // 2
-        self.grid_cells = self.grid_cells[:, x:x + self.res, y:y + self.res]
+    def clear_modules(self):
+        for m in self.modules:
+            del m.grid_cells
+            del m.grid_cell
+        torch.cuda.empty_cache()
     
     def __getitem__(self, i):
         if not hasattr(self, 'grid_cells'):
-            raise AttributeError("Grid cells have not been initialized to any environment. Run reset_modules and compile_numpy first.")
+            raise AttributeError("Grid cells have not been initialized to any environment. Run reset_modules first.")
         return self.grid_cells[i]
 
 
