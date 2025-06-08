@@ -6,6 +6,7 @@ import numpy as np
 from agent import Agent
 from grid_cells import GridCells
 from tqdm import tqdm
+from analysis import Analysis
 from utils import (PlaceFields, to_tensor,
                    get_coords, get_flanks,
                    get_loc_batch, eval_position,
@@ -209,7 +210,11 @@ if __name__ == "__main__":
     exp.compile_grid_cells(2)
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
+    anl = Analysis(exp, initialized_pc=True)
+    anl.collect_stats()
+
     exp.save()
+    anl.save_stats(os.path.join('data', exp.name))
 
     if train_env2:
         exp.rename(exp.name + '_env2')
