@@ -5,6 +5,7 @@ import numpy as np
 from argparse import ArgumentParser
 from torch.optim import RMSprop
 from torch.optim.lr_scheduler import ExponentialLR
+from scipy.stats import norm
 from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
@@ -51,7 +52,7 @@ def get_coords(resolution, MIN=-1, MAX=1):
     return torch.stack(x).view(2, -1).T.view(resolution, resolution, 2)
 
 # Only works for square coordinates centered around 0
-def get_flanks(res, reach=1, bounds=1.1):
+def get_flanks(res, reach=1, bounds=1.3):
     flanks = torch.linspace(-bounds, bounds, res, device=device)
     flanks = torch.meshgrid(flanks, flanks, indexing='xy')
     flanks = torch.stack(flanks).view(2, -1).T
@@ -174,10 +175,14 @@ class PlaceFields(nn.Module):
         
         return losses
 
-    def forward(self):
+    # Smoothing constants a and b paramterize the rate of exponential growth
+    def forward(self, sa=27, sb=1.15):
         # High flank loss ensures that the Gaussian does not drift beyond the range
         # of the coordinates (at the cost of introducing some bias around the edges)
-        flank_loss = self.calc_gaussian(self.flanks).sum() * 5
+        flank_loss = self.calc_gaussian(self.flanks)
+        smoothing = torch.exp(sa * (self.flanks.abs().max(1).values.unsqueeze(0) - sb))
+        # Smoothing increases flank loss exponentially from the boundary
+        flank_loss = (flank_loss * smoothing).sum() * 5
         pred_loss = torch.pow(self.predict() - self.targets, 2).sum()
         return pred_loss + flank_loss
     
@@ -207,7 +212,13 @@ class PlaceFields(nn.Module):
         return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
 
     def get_active_cells(self, threshold=0.001):
-        return torch.arange(self.N, device=device)[self.scales.squeeze() >= threshold]
+        return torch.arange(self.N, device=device)[self.scales.squeeze().pow(2) >= threshold]
     
     def pairwise_distances(self, pairs):
         return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
+    
+    def get_coverage(self, p=0.99):
+        diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
+        dist = (diff * (diff @ self.get_cov_inv())).sum(-1)
+        dist = dist.view(self.N, *self.coords.shape[:-1])
+        return dist.sqrt() < norm.ppf(p)

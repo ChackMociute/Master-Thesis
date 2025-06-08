@@ -115,7 +115,7 @@ class Experiment:
         return losses
     
     def initialize_place_fields(self, N, env=None, state_dict=None):
-        flanks = get_flanks(self.res + self.res // 10)
+        flanks = get_flanks(self.res // 6 + self.res // 30)
         self.pfs = PlaceFields(self.coords, flanks, N)
         self.pfs_per_env[self.current_env if env is None else env] = self.pfs
         if state_dict is not None:
