@@ -6,6 +6,7 @@ import numpy as np
 from agent import Agent
 from grid_cells import GridCells
 from tqdm import tqdm
+from gc import collect
 from utils import (PlaceFields, to_tensor,
                    get_coords, get_flanks,
                    get_loc_batch, eval_position,
@@ -80,6 +81,18 @@ class Experiment:
         if self.save_losses:
             self.pos_losses = losses
         return losses
+    
+    # Evaluate in two environments at specified timepoints during training
+    def fit_and_evaluate_positions(self, eval_batches, env2_grid_cells, batches=50000, bs=256, progress=True):
+        losses, eval_env1, eval_env2 = list(), list(), list()
+        for i in tqdm(range(batches), disable=not progress):
+            if i in eval_batches:
+                eval_env1.append(eval_position(self.agent, self.coords, self.grid_cells))
+                eval_env2.append(eval_position(self.agent, self.coords, env2_grid_cells))
+            losses.append(self.fit_position_batch(*get_loc_batch(self.coords, self.grid_cells, bs=bs)))
+        if self.save_losses:
+            self.pos_losses = losses
+        return eval_env1, eval_env2
     
     def fit_position_batch(self, x, y):
         self.agent.optim_actor.zero_grad()
@@ -185,32 +198,40 @@ if __name__ == "__main__":
     from analysis import Analysis
     
     kwargs = vars(parser.parse_args())
+    name = kwargs.pop('name')
     batches = kwargs.pop('batches')
     pf_epochs = kwargs.pop('pf_epochs')
     scheduler_updates = kwargs.pop('scheduler_updates')
-    train_env2 = kwargs.pop('train_env2')
-    batches_env2 = kwargs.pop('batches_env2')
-    batches_env2 = batches if batches_env2 is None else batches_env2
+    kwargs.pop('batches_env2')
 
-    exp = Experiment(**kwargs)
-    exp.compile_grid_cells(1)
+    data_path = os.path.join('data', name)
 
-    exp.fit_positions(batches)
-    exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
+    for i in range(5):
+        if os.path.exists(os.path.join(data_path, str(i))):
+            continue
 
-    print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03f}")
-    
-    exp.compile_grid_cells(2)
-    exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
+        exp = Experiment(str(i), **kwargs)
+        exp.compile_grid_cells(1)
 
-    anl = Analysis(exp, initialized_pc=True)
-    anl.collect_stats()
-
-    exp.save()
-    anl.save_stats(os.path.join('data', exp.name))
-
-    if train_env2:
-        exp.rename(exp.name + '_env2')
-        exp.fit_positions(batches_env2)
+        exp.fit_positions(batches)
         exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
-        exp.save()
+
+        print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03e}")
+
+        # 4 remappings for each run
+        for env in range(2, 6):
+            torch.cuda.empty_cache()
+            collect()
+            exp.compile_grid_cells(env)
+            exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
+
+        anl = Analysis(exp, initialized_pc=True)
+        anl.collect_stats()
+
+        exp.save(path=data_path)
+        anl.save_stats(os.path.join(data_path, exp.name))
+
+        del exp
+        del anl
+        torch.cuda.empty_cache()
+        collect()

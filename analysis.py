@@ -124,6 +124,24 @@ class Analysis:
         if not hasattr(self, 'stats'):
             self.collect_stats(train_env=train_env)
     
+    def save_retrain_remap(self, path, other_acs, other_pcs):
+        self.active_per_env |= other_acs
+        self.place_cells_per_env |= other_pcs
+        remaps = dict()
+        for env1, env2 in zip(self.place_cells_per_env.keys(), other_acs.keys()):
+            remaps[f"{env1}_{env1}'"] = dict(
+                turnover_ac=self.get_turnover(env1, env2, all_active=True),
+                turnover_pc=self.get_turnover(env1, env2),
+                remappping=self.get_remapping(env1, env2)
+            )
+        
+        pd.DataFrame(remaps).to_json(os.path.join(path, 'remaps.json'))
+        
+        # Remove new items
+        for k in other_acs.keys():
+            self.active_per_env.pop(k)
+            self.place_cells_per_env.pop(k)
+    
     def save_stats(self, path):
         pd.DataFrame(self.stats).to_json(os.path.join(path, "stats.json"))
     
