@@ -30,6 +30,7 @@ for i in range(5):
     exp.compile_grid_cells(1)
     exp.fit_positions(batches)
     print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03e}")
+    grid_cells = exp.grid_cells # Required for evaluation
 
     # First PFs fitting
     exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
@@ -43,8 +44,7 @@ for i in range(5):
     exp.save(path=data_path)
     anl.save_stats(os.path.join(data_path, exp.name))
     
-    # These are needed for evaluation of env 1 and for AA' and BB' remapping
-    grid_cells = exp.grid_cells
+    # These are needed for AA' and BB' remapping statistics
     pfs_per_env = {k + len(exp.pfs_per_env): v for k, v in exp.pfs_per_env.items()}
     active_cells = {k + len(anl.active_per_env): v for k, v in anl.active_per_env.items()}
     place_cells = {k + len(anl.place_cells_per_env): v for k, v in anl.place_cells_per_env.items()}
