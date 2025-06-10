@@ -31,8 +31,8 @@ class GridCellModule:
 
         if heterogeneous:
             idx = image.to(bool)
-            mask = torch.randn(idx.sum(), device=device) / 3 + 1
-            self.mask = mask.clip(0.1) if mask is None else mask
+            mask_ = torch.randn(idx.sum(), device=device) / 3 + 1
+            self.mask = mask_.clip(0.1) if mask is None else to_tensor(mask)
             image[idx] *= self.mask
         
         kernel = self.get_gaussian_kernel().reshape(1, self.scale, self.scale)
