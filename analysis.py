@@ -148,10 +148,41 @@ class Analysis:
         pd.DataFrame(self.stats).to_json(os.path.join(path, "stats.json"))
     
     @staticmethod
-    def load_stats(filename):
-        df = pd.read_json(filename)
+    def load_stats(path):
+        df = pd.read_json(os.path.join(path, 'stats.json'))
         df.index = pd.MultiIndex.from_tuples(df.index.map(eval))
         return df
+
+
+class MultiRunAnalysis:
+    def __init__(self, data_path, name, immediate_pc=False):
+        data_path = os.path.join(data_path, name)
+        dfs = [Analysis.load_stats(os.path.join(data_path, n)) for n in os.listdir(data_path)]
+        self.exps = [Experiment.load_experiment(data_path, n) for n in os.listdir(data_path)]
+        self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
+
+        df = pd.concat(dfs, keys=range(len(dfs)))
+
+        df_trn = df.loc[:, 1, :].groupby(level=1)
+        df_unt = df.loc[:, df.index.get_level_values(1).drop(1), :].groupby(level=2)
+
+        self.means = pd.concat([df_trn.mean(), df_unt.mean()], keys=['trn', 'unt'])
+        self.stds = pd.concat([df_trn.std(), df_unt.std()], keys=['trn', 'unt'])
+
+        frmt = lambda x: f"{x:.02f}" if x > 0.01 or x == 0 else f"{x:.01e}"
+        self.ci95 = self.stds * 1.96 / np.sqrt(len(dfs))
+        self.ci95 = self.means.map(frmt) + "$\pm$" + self.ci95.map(frmt)
+        self.df = df
+
+    def get_pos_losses(self):
+        return np.asarray([exp.pos_losses for exp in self.exps])
+
+    def get_pfs_losses(self):
+        losses = {env: list() for env in self.exps[0].pfs_losses.keys()}
+        for exp in self.exps:
+            for env, loss in exp.pfs_losses.items():
+                losses[env].append(loss)
+        return losses
 
 
 class MultiAnalysis:
