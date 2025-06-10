@@ -45,6 +45,7 @@ for i in range(5):
     
     # These are needed for evaluation of env 1 and for AA' and BB' remapping
     grid_cells = exp.grid_cells
+    pfs_per_env = {k + len(exp.pfs_per_env): v for k, v in exp.pfs_per_env.items()}
     active_cells = {k + len(anl.active_per_env): v for k, v in anl.active_per_env.items()}
     place_cells = {k + len(anl.place_cells_per_env): v for k, v in anl.place_cells_per_env.items()}
 
@@ -65,7 +66,7 @@ for i in range(5):
     anl.collect_stats(train_env=2)
     exp.save(path=data_path)
     anl.save_stats(os.path.join(data_path, exp.name))
-    anl.save_retrain_remap(os.path.join(data_path, exp.name), active_cells, place_cells)
+    anl.save_retrain_remap(os.path.join(data_path, exp.name), pfs_per_env, active_cells, place_cells)
     np.save(os.path.join(data_path, exp.name, 'evals.npy'), [eval_env2, eval_env1])
 
     # Reset

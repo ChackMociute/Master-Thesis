@@ -124,7 +124,8 @@ class Analysis:
         if not hasattr(self, 'stats'):
             self.collect_stats(train_env=train_env)
     
-    def save_retrain_remap(self, path, other_acs, other_pcs):
+    def save_retrain_remap(self, path, other_pfs, other_acs, other_pcs):
+        self.exp.pfs_per_env |= other_pfs
         self.active_per_env |= other_acs
         self.place_cells_per_env |= other_pcs
         remaps = dict()
@@ -139,6 +140,7 @@ class Analysis:
         
         # Remove new items
         for k in other_acs.keys():
+            self.exp.pfs_per_env.pop(k)
             self.active_per_env.pop(k)
             self.place_cells_per_env.pop(k)
     
