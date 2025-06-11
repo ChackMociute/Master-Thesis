@@ -124,6 +124,10 @@ class Analysis:
         if not hasattr(self, 'stats'):
             self.collect_stats(train_env=train_env)
     
+    def get_weights(self):
+        self.exp.agent.actor.clamp_weights()
+        return self.exp.agent.actor.w1.data.detach()
+    
     def save_retrain_remap(self, path, other_pfs, other_acs, other_pcs):
         self.exp.pfs_per_env |= other_pfs
         self.active_per_env |= other_acs
@@ -173,6 +177,8 @@ class MultiRunAnalysis:
         self.ci95 = self.stds * 1.96 / np.sqrt(len(dfs))
         self.ci95 = self.means.map(frmt) + "$\pm$" + self.ci95.map(frmt)
         self.df = df
+        
+        self.stats = ...
 
     def get_pos_losses(self):
         return np.asarray([exp.pos_losses for exp in self.exps])
@@ -183,12 +189,24 @@ class MultiRunAnalysis:
             for env, loss in exp.pfs_losses.items():
                 losses[env].append(loss)
         return losses
+    
+    def get_weights(self):
+        return torch.stack([anl.get_weights() for anl in self.anls])
+    
+    def print_active_cells(self):
+        raise NotImplementedError()
+    
+    def print_place_cells(self):
+        raise NotImplementedError()
 
 
 class MultiAnalysis:
-    def __init__(self, data_path, exp_names, immediate_pc=False):
-        self.exps = [Experiment.load_experiment(data_path, name) for name in exp_names]
-        self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
+    def __init__(self, data_path, exp_names, immediate_pc=False, multirun=True):
+        if multirun:
+            self.anls = [MultiRunAnalysis(data_path,  name) for name in exp_names]
+        else:
+            self.exps = [Experiment.load_experiment(data_path, name) for name in exp_names]
+            self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
     
     def print_active_cells(self):
         for anl in self.anls:
@@ -202,6 +220,14 @@ class MultiAnalysis:
         return pd.DataFrame({(anl.exp.name, units): values
                              for anl in self.anls
                              for units, values in anl.stats.items()})
+    
+    def nonzero_weights(self, threshold=1e-3):
+        means, stds = list(), list()
+        for anl in self.anls:
+            nonzeros = (anl.get_weights() > threshold).sum(-1)
+            means.append(nonzeros.mean(dtype=float).cpu().item())
+            stds.append(nonzeros.to(torch.float32).std().cpu().item())
+        return means, stds
 
 
 def get_cell_data(exps):
