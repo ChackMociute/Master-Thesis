@@ -3,7 +3,7 @@ import numpy as np
 
 from skimage.draw import line_aa
 from scipy.ndimage import shift
-from torchvision.transforms.functional import rotate, affine
+from torchvision.transforms.functional import affine
 from scipy.stats import multivariate_normal
 from utils import gaussian_grid, device, to_tensor
 
