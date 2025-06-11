@@ -202,6 +202,7 @@ class MultiRunAnalysis:
 
 class MultiAnalysis:
     def __init__(self, data_path, exp_names, immediate_pc=False, multirun=True):
+        self.exp_names = exp_names
         if multirun:
             self.anls = [MultiRunAnalysis(data_path,  name) for name in exp_names]
         else:
@@ -229,63 +230,72 @@ class MultiAnalysis:
             stds.append(nonzeros.to(torch.float32).std().cpu().item())
         return means, stds
 
+    def plot_lines(self, xticks, xlabel, filename=None, linthresh=1e-3, linear=False):
+        df = self.get_df(xticks, xlabel)
+        _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5))
 
-def get_cell_data(exps):
-    data = dict()
-    for e in tqdm(exps):
-        exp = Experiment.load_experiment(data_path, e)
-        anl = Analysis(exp, immediate_pc=True)
+        ax1.plot(df.iloc[-2:,[0, 2]]) # ---------------TODO: FIX COLOR---------------
+        ax1.plot(df.iloc[-2:,[1, 3]], '--')
+        ax1.set_prop_cycle(None)
+        ax1.semilogx(df.iloc[:-1,[0, 2]])
+        ax1.semilogx(df.iloc[:-1,[1, 3]], '--')
 
-        env1, env2 = exp.pfs_per_env.keys()
-        pc1, pc2 = anl.place_cells_per_env[env1], anl.place_cells_per_env[env2]
-        ac1, ac2 = anl.active_per_env[env1], anl.active_per_env[env2]
+        if linear:
+            ax1.set_xscale('linear')
+        else:
+            ax1.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
+        ax1.set_ylabel("Proportion Active", fontsize=12)
+        ax1.legend(df.columns[[0, 2, 1, 3]])
 
-        data[e] = dict(
-            env1_pc_prop=len(pc1) / exp.pfs.N,
-            env2_pc_prop=len(pc2) / exp.pfs.N,
-            env1_ac_prop=len(ac1) / exp.pfs.N,
-            env2_ac_prop=len(ac2) / exp.pfs.N,
-            remap=anl.get_remapping(env1, env2),
-            turn_pc=anl.get_turnover(env1, env2),
-            turn_ac=anl.get_turnover(env1, env2, all_active=True),
-            pc1=pc1,
-            pc2=pc2,
-            ac1=ac1,
-            ac2=ac2
-        )
-    return data
+        ax2.plot(df.iloc[-2:,4:7])
+        ax2.set_prop_cycle(None)
+        ax2.semilogx(df.iloc[:-1,4:7])
 
+        if linear:
+            ax2.set_xscale('linear')
+        else:
+            ax2.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
+        ax2.set_xlabel(df.index.name, fontsize=16)
+        ax2.set_ylabel("Remapping/Turnover", fontsize=12)
+        ax2.legend(df.columns[4:7])
 
-def plot_lines(df, filename=None, linthresh=1e-3, linear=False):
-    _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5))
+        plt.tight_layout()
+        if filename is not None:
+            plt.savefig(filename)
+        plt.show()
 
-    ax1.plot(df.iloc[-2:,[0, 2]])
-    ax1.plot(df.iloc[-2:,[1, 3]], '--')
-    ax1.set_prop_cycle(None)
-    ax1.semilogx(df.iloc[:-1,[0, 2]])
-    ax1.semilogx(df.iloc[:-1,[1, 3]], '--')
+    def get_df(self, xticks, xlabel):
+        labels = ["Place Cells (trn)", "Place Cells (unt)",
+                  "Active Cells (trn)", "Active Cells (unt)",
+                  "Remapping", "Turnover (PCs)", "Turnover (ACs)"]
+        
+        means, stds = self.get_cell_data()
 
-    if linear:
-        ax1.set_xscale('linear')
-    else:
-        ax1.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
-    ax1.set_ylabel("Proportion Active", fontsize=12)
-    ax1.legend(df.columns[[0, 2, 1, 3]])
-
-
-    ax2.plot(df.iloc[-2:,4:7])
-    ax2.set_prop_cycle(None)
-    ax2.semilogx(df.iloc[:-1,4:7])
-
-    if linear:
-        ax2.set_xscale('linear')
-    else:
-        ax2.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
-    ax2.set_xlabel(df.index.name, fontsize=16)
-    ax2.set_ylabel("Remapping/Turnover", fontsize=12)
-    ax2.legend(df.columns[4:7])
-
-    plt.tight_layout()
-    if filename is not None:
-        plt.savefig(filename)
-    plt.show()
+        df = pd.DataFrame(means).T
+        df = df.rename(index={k: v for k, v in zip(self.exp_names, xticks)})
+        df.index = df.index.rename(xlabel)
+        df.iloc[:,:7] = df.iloc[:,:7].astype(float).fillna(0)
+        return df.rename(columns={c: l for c, l in zip(df.columns, labels)})
+    
+    def get_cell_data(self):
+        means, stds = dict(), dict()
+        for e, anl in zip(self.exp_names, self.anls):
+            means[e] = dict(
+                env1_pc_prop=anl.means.loc[('trn', 'proportion'), 'place'],
+                env2_pc_prop=anl.means.loc[('unt', 'proportion'), 'place'],
+                env1_ac_prop=anl.means.loc[('trn', 'proportion'), 'active'],
+                env2_ac_prop=anl.means.loc[('unt', 'proportion'), 'active'],
+                remap=anl.means.loc[('unt', 'remapping'), 'place'],
+                turn_pc=anl.means.loc[('unt', 'turnover'), 'place'],
+                turn_ac=anl.means.loc[('unt', 'turnover'), 'active']
+            )
+            stds[e] = dict(
+                env1_pc_prop=anl.stds.loc[('trn', 'proportion'), 'place'],
+                env2_pc_prop=anl.stds.loc[('unt', 'proportion'), 'place'],
+                env1_ac_prop=anl.stds.loc[('trn', 'proportion'), 'active'],
+                env2_ac_prop=anl.stds.loc[('unt', 'proportion'), 'active'],
+                remap=anl.stds.loc[('unt', 'remapping'), 'place'],
+                turn_pc=anl.stds.loc[('unt', 'turnover'), 'place'],
+                turn_ac=anl.stds.loc[('unt', 'turnover'), 'active']
+            )
+        return means, stds
