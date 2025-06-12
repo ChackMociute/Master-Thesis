@@ -1,5 +1,4 @@
 import os
-# import sys
 import torch
 import numpy as np
 import pandas as pd
@@ -10,7 +9,6 @@ plt.style.use('tableau-colorblind10')
 from experiment import Experiment
 from itertools import product
 from scipy.stats import pearsonr
-from tqdm import tqdm
 
 
 data_path = "data"
@@ -165,7 +163,8 @@ class MultiRunAnalysis:
         self.exps = [Experiment.load_experiment(data_path, n) for n in os.listdir(data_path)]
         self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
 
-        df = pd.concat(dfs, keys=range(len(dfs)))
+        self.N = len(dfs)
+        df = pd.concat(dfs, keys=range(self.N))
 
         df_trn = df.loc[:, 1, :].groupby(level=1)
         df_unt = df.loc[:, df.index.get_level_values(1).drop(1), :].groupby(level=2)
@@ -174,7 +173,7 @@ class MultiRunAnalysis:
         self.stds = pd.concat([df_trn.std(), df_unt.std()], keys=['trn', 'unt'])
 
         frmt = lambda x: f"{x:.02f}" if x > 0.01 or x == 0 else f"{x:.01e}"
-        self.ci95 = self.stds * 1.96 / np.sqrt(len(dfs))
+        self.ci95 = self.stds * 1.96 / np.sqrt(self.N)
         self.ci95 = self.means.map(frmt) + "$\pm$" + self.ci95.map(frmt)
         self.df = df
         
@@ -201,6 +200,10 @@ class MultiRunAnalysis:
 
 
 class MultiAnalysis:
+    LABELS = ["Place Cells (trn)", "Place Cells (unt)",
+                "Active Cells (trn)", "Active Cells (unt)",
+                "Remapping", "Turnover (PCs)", "Turnover (ACs)"]
+    
     def __init__(self, data_path, exp_names, immediate_pc=False, multirun=True):
         self.exp_names = exp_names
         if multirun:
@@ -231,51 +234,54 @@ class MultiAnalysis:
         return means, stds
 
     def plot_lines(self, xticks, xlabel, filename=None, linthresh=1e-3, linear=False):
-        df = self.get_df(xticks, xlabel)
+        means, stds = self.get_plot_dfs(xticks, xlabel)
         _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5))
 
-        ax1.plot(df.iloc[-2:,[0, 2]]) # ---------------TODO: FIX COLOR---------------
-        ax1.plot(df.iloc[-2:,[1, 3]], '--')
+        ax1.errorbar(means.index, means.iloc[:,0], yerr=stds.iloc[:,0], fmt='s-', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,2], yerr=stds.iloc[:,2], fmt='s-', capsize=5)
         ax1.set_prop_cycle(None)
-        ax1.semilogx(df.iloc[:-1,[0, 2]])
-        ax1.semilogx(df.iloc[:-1,[1, 3]], '--')
+        ax1.errorbar(means.index, means.iloc[:,1], yerr=stds.iloc[:,1], fmt='s--', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,3], yerr=stds.iloc[:,3], fmt='s--', capsize=5)
 
         if linear:
             ax1.set_xscale('linear')
         else:
             ax1.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
         ax1.set_ylabel("Proportion Active", fontsize=12)
-        ax1.legend(df.columns[[0, 2, 1, 3]])
+        ax1.legend(means.columns[[0, 2, 1, 3]])
 
-        ax2.plot(df.iloc[-2:,4:7])
-        ax2.set_prop_cycle(None)
-        ax2.semilogx(df.iloc[:-1,4:7])
+        ax2.errorbar(means.index, means.iloc[:,4], yerr=stds.iloc[:,4], fmt='s-', capsize=5)
+        ax2.errorbar(means.index, means.iloc[:,5], yerr=stds.iloc[:,5], fmt='s-', capsize=5)
+        ax2.errorbar(means.index, means.iloc[:,6], yerr=stds.iloc[:,6], fmt='s-', capsize=5)
 
         if linear:
             ax2.set_xscale('linear')
         else:
             ax2.set_xscale('symlog', linthresh=linthresh, linscale=0.5, subs=range(2, 10))
-        ax2.set_xlabel(df.index.name, fontsize=16)
+        ax2.set_xlabel(means.index.name, fontsize=16)
         ax2.set_ylabel("Remapping/Turnover", fontsize=12)
-        ax2.legend(df.columns[4:7])
+        ax2.legend(means.columns[4:7])
 
         plt.tight_layout()
         if filename is not None:
             plt.savefig(filename)
         plt.show()
 
-    def get_df(self, xticks, xlabel):
-        labels = ["Place Cells (trn)", "Place Cells (unt)",
-                  "Active Cells (trn)", "Active Cells (unt)",
-                  "Remapping", "Turnover (PCs)", "Turnover (ACs)"]
+    def get_plot_dfs(self, xticks, xlabel):
         
         means, stds = self.get_cell_data()
 
-        df = pd.DataFrame(means).T
-        df = df.rename(index={k: v for k, v in zip(self.exp_names, xticks)})
-        df.index = df.index.rename(xlabel)
-        df.iloc[:,:7] = df.iloc[:,:7].astype(float).fillna(0)
-        return df.rename(columns={c: l for c, l in zip(df.columns, labels)})
+        means = pd.DataFrame(means).T
+        means = means.rename(index={k: v for k, v in zip(self.exp_names, xticks)})
+        means.index = means.index.rename(xlabel)
+        means.iloc[:,:7] = means.iloc[:,:7].astype(float).fillna(0)
+        means = means.rename(columns={c: l for c, l in zip(means.columns, self.LABELS)})
+        
+        stds = pd.DataFrame(stds)
+        stds.iloc[:7] = stds.iloc[:7].astype(float).fillna(0)
+        ses = stds * 2.576 / np.sqrt([anl.N for anl in self.anls])
+        
+        return means, ses.T
     
     def get_cell_data(self):
         means, stds = dict(), dict()
