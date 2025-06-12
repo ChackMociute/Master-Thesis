@@ -19,7 +19,7 @@ parser.add_argument('--n_per_module', type=int, default=100, help="Must be a squ
 parser.add_argument('--gc_scale_min', type=int, default=120)
 parser.add_argument('--gc_scale_max', type=int, default=400)
 parser.add_argument('--wd_l1', type=float, default=5e-3)
-parser.add_argument('--wd_l2', type=float, default=5e-5)
+parser.add_argument('--wd_l2', type=float, default=1e-4)
 parser.add_argument('--hidden_penalty', type=float, default=2e-2)
 parser.add_argument('--save_losses', action='store_true')
 parser.add_argument('--exploration_std', type=float, default=0.1)
