@@ -234,14 +234,14 @@ class MultiAnalysis:
         return means, stds
 
     def plot_lines(self, xticks, xlabel, filename=None, linthresh=1e-3, linear=False):
-        means, stds = self.get_plot_dfs(xticks, xlabel)
+        means, cis = self.get_plot_dfs(xticks, xlabel)
         _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5))
 
-        ax1.errorbar(means.index, means.iloc[:,0], yerr=stds.iloc[:,0], fmt='s-', capsize=5)
-        ax1.errorbar(means.index, means.iloc[:,2], yerr=stds.iloc[:,2], fmt='s-', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,0], yerr=cis.iloc[:,0], fmt='s-', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,2], yerr=cis.iloc[:,2], fmt='s-', capsize=5)
         ax1.set_prop_cycle(None)
-        ax1.errorbar(means.index, means.iloc[:,1], yerr=stds.iloc[:,1], fmt='s--', capsize=5)
-        ax1.errorbar(means.index, means.iloc[:,3], yerr=stds.iloc[:,3], fmt='s--', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,1], yerr=cis.iloc[:,1], fmt='s--', capsize=5)
+        ax1.errorbar(means.index, means.iloc[:,3], yerr=cis.iloc[:,3], fmt='s--', capsize=5)
 
         if linear:
             ax1.set_xscale('linear')
@@ -250,9 +250,9 @@ class MultiAnalysis:
         ax1.set_ylabel("Proportion Active", fontsize=12)
         ax1.legend(means.columns[[0, 2, 1, 3]])
 
-        ax2.errorbar(means.index, means.iloc[:,4], yerr=stds.iloc[:,4], fmt='s-', capsize=5)
-        ax2.errorbar(means.index, means.iloc[:,5], yerr=stds.iloc[:,5], fmt='s-', capsize=5)
-        ax2.errorbar(means.index, means.iloc[:,6], yerr=stds.iloc[:,6], fmt='s-', capsize=5)
+        ax2.errorbar(means.index, means.iloc[:,4], yerr=cis.iloc[:,4], fmt='s-', capsize=5)
+        ax2.errorbar(means.index, means.iloc[:,5], yerr=cis.iloc[:,5], fmt='s-', capsize=5)
+        ax2.errorbar(means.index, means.iloc[:,6], yerr=cis.iloc[:,6], fmt='s-', capsize=5)
 
         if linear:
             ax2.set_xscale('linear')
@@ -279,9 +279,9 @@ class MultiAnalysis:
         
         stds = pd.DataFrame(stds)
         stds.iloc[:7] = stds.iloc[:7].astype(float).fillna(0)
-        ses = stds * 2.576 / np.sqrt([anl.N for anl in self.anls])
+        cis = stds * 2.576 / np.sqrt([anl.N for anl in self.anls]) # 99% confidence intervals
         
-        return means, ses.T
+        return means, cis.T
     
     def get_cell_data(self):
         means, stds = dict(), dict()
