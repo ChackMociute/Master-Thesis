@@ -208,6 +208,7 @@ class MultiAnalysis:
         self.exp_names = exp_names
         if multirun:
             self.anls = [MultiRunAnalysis(data_path,  name) for name in exp_names]
+            self.df = pd.concat([anl.df for anl in self.anls], keys=exp_names)
         else:
             self.exps = [Experiment.load_experiment(data_path, name) for name in exp_names]
             self.anls = [Analysis(exp, immediate_pc=immediate_pc) for exp in self.exps]
