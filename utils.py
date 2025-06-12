@@ -204,16 +204,26 @@ class PlaceFields(nn.Module):
         variance = torch.pow(self.targets, 2).sum((1, 2))
         return 1 - error / variance
     
-    def get_place_cells(self, threshold=0.5):
-        return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
+    def get_place_cells(self, threshold=0.5, active_threshold=0.001):
+        # Active constraint: a place cell should be an active cell
+        ac = self.get_active_cells_(active_threshold)
+        # Fitness constraint: a place cell should be an active cell
+        fc = self.calc_fitness() > threshold
+        # Coverage constraint: a PC should not cover more than a third of the environment
+        cc = self.get_coverage().sum((1, 2)) / self.coords.shape[:-1].numel() < 1 / 3
+        
+        return torch.arange(self.N, device=device)[torch.stack([ac, fc, cc]).all(0)]
 
     def get_active_cells(self, threshold=0.001):
-        return torch.arange(self.N, device=device)[self.scales.squeeze().pow(2) >= threshold]
+        return torch.arange(self.N, device=device)[self.get_active_cells_(threshold)]
+    
+    def get_active_cells_(self, threshold=0.001):
+        return self.scales.squeeze().pow(2) >= threshold
     
     def pairwise_distances(self, pairs):
         return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
     
-    def get_coverage(self, p=0.99):
+    def get_coverage(self):
         diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
         dist = (diff * (diff @ self.get_cov_inv())).sum(-1)
         dist = dist.view(self.N, *self.coords.shape[:-1])
