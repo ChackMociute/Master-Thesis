@@ -233,6 +233,20 @@ class MultiAnalysis:
             means.append(nonzeros.mean(dtype=float).cpu().item())
             stds.append(nonzeros.to(torch.float32).std().cpu().item())
         return means, stds
+    
+    def coverage_stats(self):
+        df = self.df.unstack(0).groupby(level=(1, 2)).mean()
+        t1 = df.loc[1].loc[['coverage', 'scales', 'sizes']]
+        t2 = df[df.index.get_level_values(0) != 1].groupby(level=1).mean().loc[['coverage', 'scales', 'sizes']]
+        return pd.concat([t1, t2], keys=['trn', 'unt'])
+    
+    # Very rudimentary but will suffice for now
+    def plot_coverage_stats(self):
+        df = self.coverage_stats().loc[:, 'place']
+        ax = df.loc['trn'].T.plot()
+        ax.set_prop_cycle(None)
+        df.loc['unt'].T.plot(ax=ax, linestyle='--')
+        plt.show()
 
     def plot_lines(self, xticks, xlabel, filename=None, linthresh=1e-3, linear=False):
         means, cis = self.get_plot_dfs(xticks, xlabel)
