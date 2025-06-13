@@ -8,7 +8,7 @@ plt.style.use('tableau-colorblind10')
 
 from experiment import Experiment
 from itertools import product
-from scipy.stats import pearsonr
+from scipy.stats import pearsonr, norm
 
 
 data_path = "data"
@@ -171,10 +171,6 @@ class MultiRunAnalysis:
 
         self.means = pd.concat([df_trn.mean(), df_unt.mean()], keys=['trn', 'unt'])
         self.stds = pd.concat([df_trn.std(), df_unt.std()], keys=['trn', 'unt'])
-
-        frmt = lambda x: f"{x:.02f}" if x > 0.01 or x == 0 else f"{x:.01e}"
-        self.ci95 = self.stds * 1.96 / np.sqrt(self.N)
-        self.ci95 = self.means.map(frmt) + "$\pm$" + self.ci95.map(frmt)
         self.df = df
         
         self.stats = ...
@@ -188,6 +184,13 @@ class MultiRunAnalysis:
             for env, loss in exp.pfs_losses.items():
                 losses[env].append(loss)
         return losses
+    
+    # TODO: Fix confidence intervals for remapped environments
+    def get_confidece_intervals(self, ci=0.99):
+        ci = norm.ppf(ci + (1 - ci) / 2)
+        frmt = lambda x: f"{x:.02f}" if x > 0.01 or x == 0 else f"{x:.01e}"
+        ci95 = self.stds * ci / np.sqrt(self.N)
+        return self.means.map(frmt) + "$\pm$" + ci95.map(frmt)
     
     def get_weights(self):
         return torch.stack([anl.get_weights() for anl in self.anls])
@@ -240,6 +243,29 @@ class MultiAnalysis:
         t2 = df[df.index.get_level_values(0) != 1].groupby(level=1).mean().loc[['coverage', 'scales', 'sizes']]
         return pd.concat([t1, t2], keys=['trn', 'unt'])
     
+    def get_confidence_intervals(self, ci=0.99):
+        return pd.concat([anl.get_confidece_intervals(ci) for anl in self.anls], keys=self.exp_names)
+    
+    def get_data_for_statistical_test(self, var, units, how='both'):
+        def iterate(df, cols):
+            for c in cols:
+                for label, df in df.groupby(level=-1):
+                    for _, exp in df.groupby(level=0):
+                        conditions[label].append(exp.loc[:, c].values)
+
+        df = self.df.loc[(*[slice(None)]*3, var), units]
+        conditions = {v: list() for v in var}
+
+        if how in ['trn', 'both']:
+            trn = df[df.index.get_level_values(2) == 1]
+            iterate(trn, df.columns)
+
+        if how in ['unt', 'both']:
+            unt = df[df.index.get_level_values(2) != 1]
+            iterate(unt, df.columns)
+        
+        return conditions
+    
     # Very rudimentary but will suffice for now
     def plot_coverage_stats(self):
         df = self.coverage_stats().loc[:, 'place']
@@ -283,7 +309,6 @@ class MultiAnalysis:
         plt.show()
 
     def get_plot_dfs(self, xticks, xlabel):
-        
         means, stds = self.get_cell_data()
 
         means = pd.DataFrame(means).T
@@ -294,6 +319,7 @@ class MultiAnalysis:
         
         stds = pd.DataFrame(stds)
         stds.iloc[:7] = stds.iloc[:7].astype(float).fillna(0)
+        # TODO: Fix confidence intervals for remapped environments
         cis = stds * 2.576 / np.sqrt([anl.N for anl in self.anls]) # 99% confidence intervals
         
         return means, cis.T
