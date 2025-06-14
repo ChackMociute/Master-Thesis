@@ -246,7 +246,7 @@ class MultiAnalysis:
     def get_confidence_intervals(self, ci=0.99):
         return pd.concat([anl.get_confidece_intervals(ci) for anl in self.anls], keys=self.exp_names)
     
-    def get_data_for_statistical_test(self, var, units, how='both'):
+    def get_data_for_statistical_test(self, var, units, how='both', subset=None):
         def iterate(df, cols):
             for c in cols:
                 for label, df in df.groupby(level=-1):
@@ -254,6 +254,8 @@ class MultiAnalysis:
                         conditions[label].append(exp.loc[:, c].values)
 
         df = self.df.loc[(*[slice(None)]*3, var), units]
+        if subset is not None:
+            df = df.loc[subset]
         conditions = {v: list() for v in var}
 
         if how in ['trn', 'both']:
