@@ -146,6 +146,10 @@ class Analysis:
             self.active_per_env.pop(k)
             self.place_cells_per_env.pop(k)
     
+    @staticmethod
+    def load_retrain_remap(path):
+        return pd.read_json(os.path.join(path, 'remaps.json'))
+    
     def save_stats(self, path):
         pd.DataFrame(self.stats).to_json(os.path.join(path, "stats.json"))
     
@@ -348,3 +352,47 @@ class MultiAnalysis:
                 turn_ac=anl.stds.loc[('unt', 'turnover'), 'active']
             )
         return means, stds
+
+
+class Analysis2Fits:
+    def __init__(self, data_path, exp_name):
+        data_path = os.path.join(data_path, exp_name)
+        
+        exps1, exps2 = list(), list()
+        dfs1, dfs2 = list(), list()
+        evals = list()
+        remaps = list()
+        for n in os.listdir(data_path):
+            path = os.path.join(data_path, n)
+            if n.endswith('_env2'):
+                exps2.append(Experiment.load_experiment(data_path, n))
+                dfs2.append(Analysis.load_stats(path))
+                evals.append(np.load(os.path.join(path, 'evals.npy')))
+                remaps.append(Analysis.load_retrain_remap(path))
+            else:
+                exps1.append(Experiment.load_experiment(data_path, n))
+                dfs1.append(Analysis.load_stats(path))
+        
+        assert len(dfs1) == len(dfs2)
+        
+        self.N = len(dfs1)
+        self.exps = [exps1, exps2]
+        
+        self.df1 = pd.concat(dfs1, keys=range(self.N))
+        self.df2 = pd.concat(dfs2, keys=range(self.N))
+        
+        self.evals = np.stack(evals)
+        self.remaps = pd.concat(remaps, keys=range(self.N))
+    
+    def get_pos_losses(self):
+        return np.asarray([[exp.pos_losses for exp in exps] for exps in self.exps])
+    
+    @staticmethod
+    def get_retrain_remaps(data_path, exp_names):
+        remaps_per_exp = dict()
+        for name in exp_names:
+            remaps = [Analysis.load_retrain_remap(os.path.join(data_path, name, n))
+                      for n in os.listdir(os.path.join(data_path, name))
+                      if n.endswith('_env2')]
+            remaps_per_exp[name] = pd.concat(remaps, keys=range(len(remaps)))
+        return pd.concat(remaps_per_exp.values(), keys=remaps_per_exp.keys())

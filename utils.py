@@ -9,6 +9,8 @@ from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
+ENV2_EVAL_BATCHES = [0, 1, 2, 3, 5, 10, 20, 50, 100, 500, 1000, 10000, 50000 - 1]
+
 parser = ArgumentParser()
 parser.add_argument('--name', required=True)
 parser.add_argument('--batches', type=int, default=50000)
