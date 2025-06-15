@@ -387,6 +387,38 @@ class Analysis2Fits:
     def get_pos_losses(self):
         return np.asarray([[exp.pos_losses for exp in exps] for exps in self.exps])
     
+
+
+class MultiAnalysis2Fits:
+    def __init__(self, data_path, exp_names):
+        self.exp_names = exp_names
+        self.anls = [Analysis2Fits(data_path,  name) for name in exp_names]
+        self.df1 = pd.concat([anl.df1 for anl in self.anls], keys=exp_names)
+        self.df2 = pd.concat([anl.df2 for anl in self.anls], keys=exp_names)
+    
+    def get_data_for_statistical_test(self, var, units, how='both', which=1, subset=None):
+        def iterate(df, cols):
+            for c in cols:
+                for label, df in df.groupby(level=-1):
+                    for _, exp in df.groupby(level=0):
+                        conditions[label].append(exp.loc[:, c].values)
+        conditions = {v: list() for v in var}
+
+        df = self.df1 if which == 1 else self.df2
+        df = df.loc[(*[slice(None)]*3, var), units]
+        if subset is not None:
+            df = df.loc[subset]
+
+        if how in ['trn', 'both']:
+            trn = df[df.index.get_level_values(2) == 1]
+            iterate(trn, df.columns)
+
+        if how in ['unt', 'both']:
+            unt = df[df.index.get_level_values(2) != 1]
+            iterate(unt, df.columns)
+        
+        return conditions
+    
     @staticmethod
     def get_retrain_remaps(data_path, exp_names):
         remaps_per_exp = dict()
