@@ -282,7 +282,7 @@ class MultiAnalysis:
 
     def plot_lines(self, xticks, xlabel, filename=None, linthresh=1e-3, linear=False):
         means, cis = self.get_plot_dfs(xticks, xlabel)
-        _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5))
+        _, [ax1, ax2] = plt.subplots(2, 1, figsize=(6, 5), dpi=200)
 
         ax1.errorbar(means.index, means.iloc[:,0], yerr=cis.iloc[:,0], fmt='s-', capsize=5)
         ax1.errorbar(means.index, means.iloc[:,2], yerr=cis.iloc[:,2], fmt='s-', capsize=5)
