@@ -252,7 +252,7 @@ if __name__ == "__main__":
 
 
     data_path = os.path.join('data', name)
-    for i in range(1):
+    for i in range(5):
         if os.path.exists(os.path.join(data_path, str(i))):
             continue
 
@@ -269,7 +269,7 @@ if __name__ == "__main__":
             print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03e}")
 
         # 4 remappings for each run
-        for env in range(2, 3):
+        for env in range(2, 6):
             torch.cuda.empty_cache(); collect()
             exp.compile_grid_cells(env)
             exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
