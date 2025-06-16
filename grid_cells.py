@@ -3,7 +3,7 @@ import numpy as np
 
 from skimage.draw import line_aa
 from scipy.ndimage import shift
-from torchvision.transforms.functional import rotate, affine
+from torchvision.transforms.functional import affine
 from scipy.stats import multivariate_normal
 from utils import gaussian_grid, device, to_tensor
 
@@ -31,8 +31,8 @@ class GridCellModule:
 
         if heterogeneous:
             idx = image.to(bool)
-            mask = torch.randn(idx.sum(), device=device) / 3 + 1
-            self.mask = mask.clip(0.1) if mask is None else mask
+            mask_ = torch.randn(idx.sum(), device=device) / 3 + 1
+            self.mask = mask_.clip(0.1) if mask is None else to_tensor(mask)
             image[idx] *= self.mask
         
         kernel = self.get_gaussian_kernel().reshape(1, self.scale, self.scale)

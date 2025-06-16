@@ -9,6 +9,8 @@ from tqdm import tqdm
 
 device = torch.device('cuda' if torch.cuda.is_available else 'cpu')
 
+ENV2_EVAL_BATCHES = [0, 1, 2, 3, 5, 10, 20, 50, 100, 500, 1000, 10000, 50000 - 1]
+
 parser = ArgumentParser()
 parser.add_argument('--name', required=True)
 parser.add_argument('--batches', type=int, default=50000)
@@ -19,7 +21,7 @@ parser.add_argument('--n_per_module', type=int, default=100, help="Must be a squ
 parser.add_argument('--gc_scale_min', type=int, default=120)
 parser.add_argument('--gc_scale_max', type=int, default=400)
 parser.add_argument('--wd_l1', type=float, default=5e-3)
-parser.add_argument('--wd_l2', type=float, default=5e-5)
+parser.add_argument('--wd_l2', type=float, default=1e-4)
 parser.add_argument('--hidden_penalty', type=float, default=2e-2)
 parser.add_argument('--save_losses', action='store_true')
 parser.add_argument('--exploration_std', type=float, default=0.1)
@@ -34,7 +36,6 @@ parser.add_argument('--lr_c', type=float, default=5e-4)
 parser.add_argument('--wd_c', type=float, default=1e-5)
 parser.add_argument('--grad_norm', type=float, default=1e-1)
 parser.add_argument('--heterogeneous', action='store_true')
-parser.add_argument('--train_env2', action='store_true')
 parser.add_argument('--batches_env2', type=int, default=None)
 
 
@@ -205,16 +206,26 @@ class PlaceFields(nn.Module):
         variance = torch.pow(self.targets, 2).sum((1, 2))
         return 1 - error / variance
     
-    def get_place_cells(self, threshold=0.5):
-        return torch.arange(self.N, device=device)[self.calc_fitness() > threshold]
+    def get_place_cells(self, threshold=0.5, active_threshold=0.001):
+        # Active constraint: a place cell should be an active cell
+        ac = self.get_active_cells_(active_threshold)
+        # Fitness constraint: a place cell should be an active cell
+        fc = self.calc_fitness() > threshold
+        # Coverage constraint: a PC should not cover more than a third of the environment
+        cc = self.get_coverage().sum((1, 2)) / self.coords.shape[:-1].numel() < 1 / 3
+        
+        return torch.arange(self.N, device=device)[torch.stack([ac, fc, cc]).all(0)]
 
     def get_active_cells(self, threshold=0.001):
-        return torch.arange(self.N, device=device)[self.scales.squeeze().pow(2) >= threshold]
+        return torch.arange(self.N, device=device)[self.get_active_cells_(threshold)]
+    
+    def get_active_cells_(self, threshold=0.001):
+        return self.scales.squeeze().pow(2) >= threshold
     
     def pairwise_distances(self, pairs):
         return torch.pow(self.means[pairs[:,0]] - self.means[pairs[:,1]], 2).sum(-1).sqrt()
     
-    def get_coverage(self, p=0.99):
+    def get_coverage(self):
         diff = self.coords.view(1, -1, 2) - self.means.view(-1, 1, 2)
         dist = (diff * (diff @ self.get_cov_inv())).sum(-1)
         dist = dist.view(self.N, *self.coords.shape[:-1])
