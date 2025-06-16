@@ -77,8 +77,9 @@ class Agent:
         self.bs = bs
         self.tau = tau
         self.amp = action_amp
-        self.exploration_std = exploration_std
         self.grad_norm = grad_norm
+        
+        self.configure_exploration(exploration_std)
         
         self.buffer = ReplayBuffer(inp_size, actions, maxlen=buffer_length)
         
@@ -92,6 +93,14 @@ class Agent:
         self.optim_actor = RMSprop([p for p in self.actor.parameters()], lr=lr_a, weight_decay=wd_a)
         self.critic_criterion = nn.MSELoss()
     
+    def configure_exploration(self, exploration_std):
+        if type(exploration_std) == float:
+            self.exploration_std = exploration_std
+            self.update_exploration = False
+        else:
+            self.exploration_stds = np.logspace(*exploration_std)
+            self.update_exploration = True
+
     def update_target_networks(self, tau=None):
         if tau is None:
             tau = self.tau
@@ -103,6 +112,10 @@ class Agent:
         for p, tp in zip(net.parameters(), tnet.parameters()):
             tp.data.copy_(tau * p.data + tp.data * (1 - tau))
     
+    def exploration_update(self, episode):
+        if self.update_exploration:
+            self.exploration_std = self.exploration_stds[episode]
+    
     def remember(self, state, action, reward, new_state, done, loc=None):
         self.buffer.store_transition(state, action, reward, new_state, done, loc)
     
@@ -113,7 +126,7 @@ class Agent:
             action = torch.clip(action, -self.amp, self.amp)
         return action.detach().cpu().numpy() if numpy else action
     
-    def learn(self):
+    def learn(self, wd, hidden_penalty):
         if self.buffer.counter < self.bs:
             return
         
@@ -130,11 +143,11 @@ class Agent:
         self.optim_critic.step()
         
         self.optim_actor.zero_grad(set_to_none=True)
-        actions_, positions = self.actor(states)
+        actions_, _ = self.actor(states)
         loss_actor = -self.critic(states, actions_)
         loss_actor = torch.mean(loss_actor)
-        # dists = positions - locs
-        # loss_actor += torch.sum(dists * dists, dim=-1).mean()
+        loss_actor += self.actor.hidden_loss(hidden_penalty)
+        loss_actor += self.actor.regularization_loss(*wd)
         loss_actor.backward()
         nn.utils.clip_grad_norm_(self.actor.parameters(), self.grad_norm)
         self.optim_actor.step()

@@ -24,7 +24,7 @@ parser.add_argument('--wd_l1', type=float, default=5e-3)
 parser.add_argument('--wd_l2', type=float, default=1e-4)
 parser.add_argument('--hidden_penalty', type=float, default=2e-2)
 parser.add_argument('--save_losses', action='store_true')
-parser.add_argument('--exploration_std', type=float, default=0.1)
+parser.add_argument('--exploration_std', default='(0,-3)')
 parser.add_argument('--bs', type=int, default=64)
 parser.add_argument('--tau', type=float, default=5e-3)
 parser.add_argument('--buffer_length', type=int, default=1000)
@@ -36,6 +36,8 @@ parser.add_argument('--lr_c', type=float, default=5e-4)
 parser.add_argument('--wd_c', type=float, default=1e-5)
 parser.add_argument('--grad_norm', type=float, default=1e-1)
 parser.add_argument('--heterogeneous', action='store_true')
+parser.add_argument('--reinforcement', action='store_true')
+parser.add_argument('--max_episode_len', type=int, default=30)
 parser.add_argument('--batches_env2', type=int, default=None)
 
 
@@ -78,10 +80,10 @@ def print_stats(w):
     print("min   |max  |mean |std  |shape")
     print(f"{w.min():.03f}|{w.max():.03f}|{w.mean():.03f}|{w.std():.03f}|{w.shape}")
 
-def eval_locomotion(agent, env, n_ep=200, maxlen=50):
+def eval_locomotion(agent, env, n_ep=200, maxlen=50, silence=True):
     rewards, lengths = list(), list()
     print("Starting evaluation")
-    for _ in tqdm(range(n_ep)):
+    for _ in tqdm(range(n_ep), disable=silence):
         reward = list()
         s = env.reset(end_radius=0.25)
         step = 0

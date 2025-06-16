@@ -28,7 +28,7 @@ class GridCellWorld(Environment):
         dim = self.coords.shape[-1]
         amp = np.diff(self.bounds).item()
         self.end_point = torch.zeros(dim, device=device) if end_point is None else end_point
-        self.end_radius = amp / 20 if end_radius is None else end_radius
+        self.end_radius = amp / 100 if end_radius is None else end_radius
         # self.velocity = np.zeros(dim)
         self.state = torch.rand(dim, device=device) * amp + self.bounds[0]
         while self.done(self.distance()):
@@ -54,12 +54,11 @@ class GridCellWorld(Environment):
         return (row, col)
     
     def done(self, dist):
-        return dist <= self.end_radius**2
+        return dist <= self.end_radius
     
     def reward(self, dist):
-        reward = -torch.sqrt(dist)
-        return to_tensor(1) if self.done(dist) else reward
+        return to_tensor(1) if self.done(dist) else -dist
     
     def distance(self):
         dist = self.state - self.end_point
-        return torch.sum(dist * dist)
+        return torch.sum(dist * dist).sqrt()
