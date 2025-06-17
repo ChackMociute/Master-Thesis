@@ -19,7 +19,7 @@ class Critic(nn.Module):
 
     
 class Actor(nn.Module):
-    def __init__(self, inp_size, actions, bounds, hidden=128, action_amp=1):
+    def __init__(self, inp_size, actions, bounds, hidden=128, action_amp=1, cos_output=False):
         super().__init__()
         self.w1 = nn.parameter.Parameter(torch.Tensor(hidden, inp_size).exponential_(lambd=1))
         self.b1 = nn.parameter.Parameter(torch.zeros(hidden))
@@ -29,6 +29,7 @@ class Actor(nn.Module):
         self.bounds = bounds
         self.position_amp = np.diff(self.bounds).item()
         self.action_amp = action_amp
+        self.pos_activation = torch.cos if cos_output else nn.functional.tanh
     
     def forward(self, state):
         self.hidden = self.lin1(state)
@@ -36,8 +37,7 @@ class Actor(nn.Module):
         actions, positions = x[:,:self.actions], x[:,self.actions:]
         
         actions = nn.functional.tanh(actions) * self.action_amp
-        positions = nn.functional.sigmoid(positions)
-        positions = positions * self.position_amp + self.bounds[0]
+        positions = self.pos_activation(positions)
         
         return actions.squeeze(), positions.squeeze()
     
@@ -59,6 +59,9 @@ class Actor(nn.Module):
     
     def hidden_loss(self, weight):
         return self.hidden.sum(dim=-1).mean() * weight
+    
+    def change_activation(self, new_activation):
+        self.pos_activation = new_activation
 
 
 class Agent:
