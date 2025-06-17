@@ -39,6 +39,7 @@ parser.add_argument('--heterogeneous', action='store_true')
 parser.add_argument('--reinforcement', action='store_true')
 parser.add_argument('--max_episode_len', type=int, default=30)
 parser.add_argument('--batches_env2', type=int, default=None)
+parser.add_argument('--fake_cells', action='store_true')
 
 
 def gaussian_grid(coords, gaussians):

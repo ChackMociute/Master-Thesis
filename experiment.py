@@ -29,6 +29,7 @@ class Experiment:
                  heterogeneous=False,
                  reinforcement=False, # Set to true for RL experiment
                  max_episode_len=30,
+                 fake_cells=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -40,6 +41,7 @@ class Experiment:
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
+        self.fake_cells = fake_cells
         self.gcs = GridCells(self.scales, n_per_module=n_per_module,
                              res=resolution, heterogeneous=heterogeneous)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
@@ -70,7 +72,10 @@ class Experiment:
             wd_l2=self.wd[1],
             hidden_penalty=self.hidden_penalty,
             save_losses=self.save_losses, 
-            heterogeneous = self.heterogeneous
+            heterogeneous = self.heterogeneous,
+            reinforcement=self.reinforcement,
+            max_episode_len=self.max_episode_len,
+            fake_cells=self.fake_cells
         )
     
     def rename(self, name):
@@ -78,8 +83,12 @@ class Experiment:
     
     def compile_grid_cells(self, env):
         self.current_env = env
-        self.gcs.reset_modules(env)
-        self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
+        if self.fake_cells:
+            self.gcs.fake_cells(self.coords, env)
+            self.grid_cells = self.gcs.grid_cells
+        else:
+            self.gcs.reset_modules(env)
+            self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
     
     def run_experiment(self, *args, **kwargs):
         self.learn_rl(*args, **kwargs) if self.reinforcement else self.fit_positions(*args, **kwargs)
@@ -192,10 +201,13 @@ class Experiment:
     def save_metadata(self, path):
         metadata = dict(
             name=self.name,
-            envs=self.gcs.envs,
             experiment_kwargs=self.experiment_kwargs,
             agent_kwargs=self.agent_kwargs
         )
+        if self.fake_cells:
+            torch.save(self.gcs.envs, os.path.join(path, 'envs.pt'))
+        else:
+            metadata['envs'] = self.gcs.envs
 
         if self.save_losses:
             if self.reinforcement:
@@ -217,9 +229,15 @@ class Experiment:
             metadata = json.loads(f.read())
         
         exp = Experiment(name, **metadata['experiment_kwargs'], **metadata['agent_kwargs'])
-        exp.gcs.envs = metadata['envs']
+        
+        exp.gcs.envs = torch.load(os.path.join(path, 'envs.pt')) \
+            if exp.fake_cells else metadata['envs']
+        
         if exp.save_losses:
-            exp.pos_losses = metadata['pos_losses']
+            if exp.reinforcement:
+                exp.rl_results = metadata['rl_results']
+            else:
+                exp.pos_losses = metadata['pos_losses']
             exp.pfs_losses = metadata['pfs_losses']
 
         state_dicts = torch.load(os.path.join(path, "models.pt"))
