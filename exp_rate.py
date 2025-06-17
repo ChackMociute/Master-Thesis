@@ -5,6 +5,7 @@ import numpy as np
 from utils import parser, eval_position
 from experiment import Experiment
 from analysis import Analysis
+from copy import deepcopy
 
 
 kwargs = vars(parser.parse_args())
@@ -20,6 +21,10 @@ for i in os.listdir('data/baseline'):
     exp = Experiment.load_experiment('data', f'{name}/{i}')
     exp.agent.actor.change_activation(torch.cos)
     exp.compile_grid_cells(1)
+    
+    exp.load_pfs()
+    exp.pfs_per_env = dict(old=deepcopy(exp.pfs))
+    
     for b in eval_batches:
         exp.rename(f'baseline_cos{b}/{i}')
         
