@@ -181,8 +181,15 @@ class GridCells:
 
     def compile_cells(self):
         self.grid_cells = torch.concat([module.grid_cells for module in self.modules])
-        # self.grid_cells = self.grid_cells.to(torch.float16)
         self.shape = self.grid_cells.shape
+    
+    def fake_cells(self, coords, env='random'):
+        env = str(env)
+        if env not in self.envs.keys() or env == 'random':
+            n = self.N * len(self.modules)
+            self.envs[env] = torch.randn(2, n, device=device)
+        mat1 = self.envs[env]
+        self.grid_cells = torch.sin(torch.pow(coords @ mat1, 3))
     
     def clear_modules(self):
         for m in self.modules:

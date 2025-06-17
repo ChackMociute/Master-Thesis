@@ -5,12 +5,13 @@ import numpy as np
 
 from agent import Agent
 from grid_cells import GridCells
+from environment import GridCellWorld
 from tqdm import tqdm
 from gc import collect
-from utils import (PlaceFields, to_tensor,
+from utils import (PlaceFields, parser,
                    get_coords, get_flanks,
                    get_loc_batch, eval_position,
-                   parser)
+                   eval_locomotion)
 
 
 class Experiment:
@@ -26,6 +27,9 @@ class Experiment:
                  hidden_penalty=2e-2,
                  save_losses=True,
                  heterogeneous=False,
+                 reinforcement=False, # Set to true for RL experiment
+                 max_episode_len=30,
+                 fake_cells=False,
                  **agent_kwargs
                  ):
         self.name = name
@@ -37,17 +41,21 @@ class Experiment:
         self.scales = np.linspace(gc_scale_min, gc_scale_max, n_modules, dtype=int)
         
         self.n_per_module = n_per_module
+        self.fake_cells = fake_cells
         self.gcs = GridCells(self.scales, n_per_module=n_per_module,
                              res=resolution, heterogeneous=heterogeneous)
         self.agent = Agent(n_modules * n_per_module, 2, **agent_kwargs)
 
         self.pfs_per_env = dict()
         self.current_env = None
-
+        
         self.heterogeneous = heterogeneous
 
         self.save_losses = save_losses
         self.pfs_losses = dict()
+
+        self.reinforcement = reinforcement
+        self.max_episode_len = max_episode_len
 
         self.store_experiment_kwargs()
         self.agent_kwargs = agent_kwargs
@@ -64,7 +72,10 @@ class Experiment:
             wd_l2=self.wd[1],
             hidden_penalty=self.hidden_penalty,
             save_losses=self.save_losses, 
-            heterogeneous = self.heterogeneous
+            heterogeneous = self.heterogeneous,
+            reinforcement=self.reinforcement,
+            max_episode_len=self.max_episode_len,
+            fake_cells=self.fake_cells
         )
     
     def rename(self, name):
@@ -72,9 +83,43 @@ class Experiment:
     
     def compile_grid_cells(self, env):
         self.current_env = env
-        self.gcs.reset_modules(env)
-        self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
+        if self.fake_cells:
+            self.gcs.fake_cells(self.coords, env)
+            self.grid_cells = self.gcs.grid_cells
+        else:
+            self.gcs.reset_modules(env)
+            self.grid_cells = self.gcs.grid_cells.permute(1, 2, 0)
     
+    def run_experiment(self, *args, **kwargs):
+        self.learn_rl(*args, **kwargs) if self.reinforcement else self.fit_positions(*args, **kwargs)
+    
+    def learn_rl(self, n_episodes):
+        env = GridCellWorld(self.grid_cells, self.coords)
+        rewards, lengths = list(), list()
+        for ep in tqdm(range(n_episodes)):
+            self.agent.exploration_update(ep)
+            l, r = self.run_rl_episode(env)
+            lengths.append(l)
+            rewards.append(r)
+        if self.save_losses:
+            self.rl_results = {'lengths': lengths, 'rewards': rewards}
+    
+    def run_rl_episode(self, env):
+        done = False
+        step = 0
+        reward = list()
+        s, loc = env.reset(), env.state
+        while not done and step < self.max_episode_len:
+            a = self.agent.choose_action(s)
+            s_new, r, done = env.next_state(a)
+            self.agent.remember(s, a, r, s_new, done, loc)
+            self.agent.learn(exp.wd, exp.hidden_penalty)
+            s, loc = s_new, env.state
+            step += 1
+            reward.append(r)
+        return step, sum(reward).cpu().item()
+
+
     def fit_positions(self, batches=50000, bs=256, progress=True):
         losses = [self.fit_position_batch(*get_loc_batch(self.coords, self.grid_cells, bs=bs))
                   for _ in tqdm(range(batches), disable=not progress)]
@@ -156,13 +201,20 @@ class Experiment:
     def save_metadata(self, path):
         metadata = dict(
             name=self.name,
-            envs=self.gcs.envs,
             experiment_kwargs=self.experiment_kwargs,
             agent_kwargs=self.agent_kwargs
         )
+        if self.fake_cells:
+            torch.save(self.gcs.envs, os.path.join(path, 'envs.pt'))
+        else:
+            metadata['envs'] = self.gcs.envs
 
         if self.save_losses:
-            metadata |= dict(pos_losses=self.pos_losses, pfs_losses=self.pfs_losses)
+            if self.reinforcement:
+                metadata['rl_results'] = self.rl_results
+            else:
+                metadata['pos_losses'] = self.pos_losses
+            metadata['pfs_losses'] = self.pfs_losses
         
         with open(os.path.join(path, 'metadata.json'), 'w') as f:
             f.write(json.dumps(metadata))
@@ -177,9 +229,15 @@ class Experiment:
             metadata = json.loads(f.read())
         
         exp = Experiment(name, **metadata['experiment_kwargs'], **metadata['agent_kwargs'])
-        exp.gcs.envs = metadata['envs']
+        
+        exp.gcs.envs = torch.load(os.path.join(path, 'envs.pt')) \
+            if exp.fake_cells else metadata['envs']
+        
         if exp.save_losses:
-            exp.pos_losses = metadata['pos_losses']
+            if exp.reinforcement:
+                exp.rl_results = metadata['rl_results']
+            else:
+                exp.pos_losses = metadata['pos_losses']
             exp.pfs_losses = metadata['pfs_losses']
 
         state_dicts = torch.load(os.path.join(path, "models.pt"))
@@ -203,9 +261,15 @@ if __name__ == "__main__":
     pf_epochs = kwargs.pop('pf_epochs')
     scheduler_updates = kwargs.pop('scheduler_updates')
     kwargs.pop('batches_env2')
+    
+    exploration_std = eval(kwargs.pop('exploration_std'))
+    if not (type(exploration_std) == float or type(exploration_std) == tuple):
+        raise TypeError('Argument --exploration_std must be a float or a tuple')
+    # If tuple, exploration std is of form (min, max, n) for np.logspace(min, max, n)
+    kwargs['exploration_std'] = (*exploration_std, batches) if type(exploration_std) == tuple else exploration_std
+
 
     data_path = os.path.join('data', name)
-
     for i in range(5):
         if os.path.exists(os.path.join(data_path, str(i))):
             continue
@@ -213,15 +277,18 @@ if __name__ == "__main__":
         exp = Experiment(str(i), **kwargs)
         exp.compile_grid_cells(1)
 
-        exp.fit_positions(batches)
+        exp.run_experiment(batches)
         exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
-        print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03e}")
+        if exp.reinforcement:
+            r, l = eval_locomotion(exp.agent, GridCellWorld(exp.grid_cells, exp.coords))
+            print(f"Average reward: {r:.03f}\nAverage epsiode length: {l:.03f}")
+        else:
+            print(f"Position loss: {eval_position(exp.agent, exp.coords, exp.grid_cells):.03e}")
 
         # 4 remappings for each run
         for env in range(2, 6):
-            torch.cuda.empty_cache()
-            collect()
+            torch.cuda.empty_cache(); collect()
             exp.compile_grid_cells(env)
             exp.fit_place_fields(pf_epochs, scheduler_updates=scheduler_updates)
 
@@ -231,7 +298,5 @@ if __name__ == "__main__":
         exp.save(path=data_path)
         anl.save_stats(os.path.join(data_path, exp.name))
 
-        del exp
-        del anl
-        torch.cuda.empty_cache()
-        collect()
+        del exp; del anl
+        torch.cuda.empty_cache(); collect()

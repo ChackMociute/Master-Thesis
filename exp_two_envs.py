@@ -16,6 +16,12 @@ pf_epochs = kwargs.pop('pf_epochs')
 scheduler_updates = kwargs.pop('scheduler_updates')
 batches_env2 = kwargs.pop('batches_env2')
 batches_env2 = batches if batches_env2 is None else batches_env2
+    
+exploration_std = eval(kwargs.pop('exploration_std'))
+if not (type(exploration_std) == float or type(exploration_std) == tuple):
+    raise TypeError('Argument --exploration_std must be a float or a tuple')
+# If tuple, exploration std is of form (min, max, n) for np.logspace(min, max, n)
+kwargs['exploration_std'] = (*exploration_std, batches) if type(exploration_std) == tuple else exploration_std
 
 data_path = os.path.join('data', name)
 
