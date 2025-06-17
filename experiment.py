@@ -11,7 +11,7 @@ from gc import collect
 from utils import (PlaceFields, parser,
                    get_coords, get_flanks,
                    get_loc_batch, eval_position,
-                   eval_locomotion)
+                   eval_locomotion, device)
 
 
 class Experiment:
@@ -108,12 +108,13 @@ class Experiment:
         done = False
         step = 0
         reward = list()
-        s, loc = env.reset(), env.state
+        end_point = torch.rand(2, device=device) * 2 - 1
+        s, loc = env.reset(end_point=end_point), env.state
         while not done and step < self.max_episode_len:
             a = self.agent.choose_action(s)
             s_new, r, done = env.next_state(a)
             self.agent.remember(s, a, r, s_new, done, loc)
-            self.agent.learn(exp.wd, exp.hidden_penalty)
+            self.agent.learn(self.wd, self.hidden_penalty)
             s, loc = s_new, env.state
             step += 1
             reward.append(r)

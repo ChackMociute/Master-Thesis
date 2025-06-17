@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 from utils import ReplayBuffer, device
-from torch.optim import Adam, RMSprop
+from torch.optim import RMSprop
 
 
 class Critic(nn.Module):
@@ -59,12 +59,14 @@ class Actor(nn.Module):
     
     def hidden_loss(self, weight):
         return self.hidden.sum(dim=-1).mean() * weight
+        # +\
+        #        (self.hidden * 2).pow(8).sum(dim=-1).mean() * 0.01
 
 
 class Agent:
     def __init__(self, inp_size, actions,
                  bounds=(-1, 1),
-                 action_amp=1,
+                 action_amp=0.1,
                  exploration_std=0.1,
                  bs=64,
                  tau=0.005,
@@ -81,12 +83,12 @@ class Agent:
         
         self.configure_exploration(exploration_std)
         
-        self.buffer = ReplayBuffer(inp_size, actions, maxlen=buffer_length)
+        self.buffer = ReplayBuffer(inp_size + 2, actions, maxlen=buffer_length)
         
-        self.actor = Actor(inp_size, actions, bounds=bounds, action_amp=action_amp, hidden=actor_hidden).to(device)
-        self.target_actor = Actor(inp_size, actions, bounds=bounds, action_amp=action_amp, hidden=actor_hidden).to(device)
-        self.critic = Critic(inp_size + actions, hidden=critic_hidden).to(device)
-        self.target_critic = Critic(inp_size + actions, hidden=critic_hidden).to(device)
+        self.actor = Actor(inp_size + 2, actions, bounds=bounds, action_amp=action_amp, hidden=actor_hidden).to(device)
+        self.target_actor = Actor(inp_size + 2, actions, bounds=bounds, action_amp=action_amp, hidden=actor_hidden).to(device)
+        self.critic = Critic(inp_size + actions + 2, hidden=critic_hidden).to(device)
+        self.target_critic = Critic(inp_size + actions + 2, hidden=critic_hidden).to(device)
         self.update_target_networks(tau=1)
         
         self.optim_critic = RMSprop([p for p in self.critic.parameters()], lr=lr_c, weight_decay=wd_c)
@@ -130,7 +132,10 @@ class Agent:
         if self.buffer.counter < self.bs:
             return
         
-        states, actions, rewards, next_states, dones, locs = self.buffer.sample(self.bs)
+        states, actions, rewards, next_states, dones, _ = self.buffer.sample(self.bs)
+        
+        self.actor.clamp_weights()
+        self.target_actor.clamp_weights()
         
         self.optim_critic.zero_grad(set_to_none=True)
         target_actions, _ = self.target_actor(next_states)

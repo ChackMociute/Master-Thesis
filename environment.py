@@ -46,7 +46,7 @@ class GridCellWorld(Environment):
         # return np.concatenate([self.velocity, self.grid_cells[self.closest_coord_index(self.state)]])
         if self.debug:
             return self.state
-        return self.grid_cells[self.closest_coord_index(self.state)]
+        return torch.concat([self.grid_cells[self.closest_coord_index(self.state)], self.end_point])
     
     def closest_coord_index(self, coord):
         idx = torch.abs(self.coords - coord).sum(axis=-1).argmin()
