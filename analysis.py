@@ -207,8 +207,8 @@ class MultiRunAnalysis:
 
 
 class MultiAnalysis:
-    LABELS = ["Place Cells (trn)", "Place Cells (unt)",
-                "Active Cells (trn)", "Active Cells (unt)",
+    LABELS = ["Place Cells (T)", "Place Cells (N)",
+                "Active Cells (T)", "Active Cells (N)",
                 "Remapping", "Turnover (PCs)", "Turnover (ACs)"]
     
     def __init__(self, data_path, exp_names, immediate_pc=False, multirun=True):
